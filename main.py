@@ -11,50 +11,68 @@ from zoneinfo import ZoneInfo
 # 1. CONFIGURACIÓN (GOOGLE DRIVE)
 # ==========================================
 DRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/1xXeea_F6HTsI-Wfj7HP2KdCnzGtPIUQq?usp=sharing"
-
 DATA_DIR = "./data"
 OUTPUT_HTML = "index.html"
 
-# PARÁMETROS DEL MODELO
+# PARÁMETROS DEL MODELO (Igual a tu Excel)
 TIEMPO_MISION_HRS = 120
 TIEMPO_IDEAL_REP_HRS = 1
 
 # ==========================================
-# 2. DESCARGA DESDE GOOGLE DRIVE
+# 2. FUNCIONES DE BÚSQUEDA INTELIGENTE
 # ==========================================
-def descargar_desde_drive():
-    print(f"📥 Conectando a Google Drive para descargar Excels...")
-    
-    if os.path.exists(DATA_DIR):
-        shutil.rmtree(DATA_DIR)
+def buscar_columna(columnas, palabras_clave, excluir=None):
+    for c in columnas:
+        cl = str(c).lower().replace('ó','o').replace('í','i').strip()
+        if excluir and excluir in cl:
+            continue
+        for palabra in palabras_clave:
+            if palabra in cl:
+                return c
+    return None
+
+def buscar_tiempo_detencion(columnas):
+    # Prioridad 1: Tiempo total expresamente en minutos u horas
+    for c in columnas:
+        cl = str(c).lower().replace('ó','o')
+        if 'std' in cl: continue
+        if 'total [min]' in cl: return c, True
+        if 'detencion [hr]' in cl: return c, False
+    # Prioridad 2: Fallback general
+    for c in columnas:
+        cl = str(c).lower().replace('ó','o')
+        if 'std' in cl: continue
+        if 'detencion' in cl and '[min]' in cl: return c, True
+        if 'detencion' in cl and 'hr' in cl: return c, False
+    return None, False
+
+def buscar_tiempo_operativo(columnas):
+    for c in columnas:
+        cl = str(c).lower()
+        if ('operativo' in cl or 'real' in cl) and '[hr]' in cl: return c, False
+        if 'tpo hr real' in cl: return c, False
+        if 'operativo' in cl and '[min]' in cl: return c, True
+    return None, False
+
+# ==========================================
+# 3. EXTRACCIÓN Y TRANSFORMACIÓN (ETL)
+# ==========================================
+def procesar_datos_confiabilidad():
+    print(f"📥 Conectando a Google Drive...")
+    if os.path.exists(DATA_DIR): shutil.rmtree(DATA_DIR)
     os.makedirs(DATA_DIR, exist_ok=True)
-    
     try:
         gdown.download_folder(url=DRIVE_FOLDER_URL, output=DATA_DIR, quiet=False, use_cookies=False)
-        print("✅ Descarga desde Google Drive completada.")
     except Exception as e:
         print(f"❌ Error al descargar de Drive: {e}")
 
-# ==========================================
-# 3. EXTRACCIÓN Y TRANSFORMACIÓN (ETL FLEXIBLE)
-# ==========================================
-def procesar_datos_confiabilidad():
-    descargar_desde_drive()
-    
-    print("🚀 INICIANDO PROCESAMIENTO DE EXCEL...")
-    
-    if not os.path.exists(DATA_DIR):
-        print(f"❌ Error: No se encontró la carpeta '{DATA_DIR}'.")
-        return {}
-
+    print("\n🚀 INICIANDO PROCESAMIENTO INTELIGENTE DE EXCEL...")
     archivos = [f for f in os.listdir(DATA_DIR) if f.endswith('.xlsx') and not f.startswith('~')]
-    print(f"   ✅ Se encontraron {len(archivos)} archivos Excel para procesar.")
-
     datos_equipos = []
     
     for archivo_nombre in archivos:
         ruta_completa = os.path.join(DATA_DIR, archivo_nombre)
-        print(f"   📊 Procesando archivo: {archivo_nombre}")
+        print(f"\n📊 Analizando: {archivo_nombre}")
         
         try:
             excel = pd.ExcelFile(ruta_completa)
@@ -64,83 +82,78 @@ def procesar_datos_confiabilidad():
             hoja_tpo = next((h for h in hojas if h.endswith('_Tiempos_Planificados')), None)
             
             if not hoja_det or not hoja_tpo:
-                print(f"      ⚠️ Faltan pestañas base en {archivo_nombre}. Saltando...")
+                print(f"   ⚠️ Faltan pestañas base. Saltando...")
                 continue
                 
             df_det = pd.read_excel(excel, sheet_name=hoja_det)
             df_tpo = pd.read_excel(excel, sheet_name=hoja_tpo)
-            
-            # Limpiar espacios fantasmas en los nombres de las columnas
-            df_det.columns = df_det.columns.str.strip()
-            df_tpo.columns = df_tpo.columns.str.strip()
-            
             planta_nombre = archivo_nombre.replace("Confiabilidad ", "").replace(".xlsx", "").strip()
             
-            # --- LÓGICA FLEXIBLE PARA DETENCIONES ---
-            col_equipo = 'Componente' if 'Componente' in df_det.columns else 'Equipo'
-            col_semana = 'N° Semana' if 'N° Semana' in df_det.columns else 'Semana'
+            # --- LIMPIEZA DETENCIONES ---
+            col_equipo = buscar_columna(df_det.columns, ['equipo', 'componente'])
+            col_semana_det = buscar_columna(df_det.columns, ['semana'], excluir='aux')
+            col_linea_det = buscar_columna(df_det.columns, ['linea'])
+            col_tpo_det, is_det_min = buscar_tiempo_detencion(df_det.columns)
             
-            # Buscar la columna correcta de tiempo de detención
-            if 'Tpo detención total [min]' in df_det.columns:
-                col_tpo_det = 'Tpo detención total [min]'
-            elif 'Tiempo Det total [min]' in df_det.columns:
-                col_tpo_det = 'Tiempo Det total [min]'
-            elif 'Tiempo detención [min]' in df_det.columns:
-                col_tpo_det = 'Tiempo detención [min]'
-            else:
-                # Si le cambian el nombre otra vez, buscamos la que contenga "detención" o "detencion"
-                col_tpo_det = [c for c in df_det.columns if 'detención' in c.lower() or 'detencion' in c.lower()][0]
+            if not all([col_equipo, col_semana_det, col_linea_det, col_tpo_det]):
+                print(f"   ❌ Faltan columnas en Detenciones. (Eq:{col_equipo}, Sem:{col_semana_det}, Lin:{col_linea_det}, Tpo:{col_tpo_det})")
+                continue
+
+            df_det = df_det.dropna(subset=[col_equipo, col_semana_det, col_linea_det])
+            df_det['Hrs_Perdidas'] = pd.to_numeric(df_det[col_tpo_det], errors='coerce').fillna(0)
+            if is_det_min: df_det['Hrs_Perdidas'] /= 60.0
             
-            df_det = df_det.dropna(subset=[col_equipo, col_semana, 'Línea'])
-            # Convertir a numérico forzadamente (si hay texto raro lo vuelve 0)
-            df_det['Hrs_Perdidas'] = pd.to_numeric(df_det[col_tpo_det], errors='coerce').fillna(0) / 60.0
+            df_det['Linea_Clean'] = df_det[col_linea_det].astype(str).str.strip().str.upper()
+            df_det['Semana_Clean'] = df_det[col_semana_det].astype(str).str.strip()
+            df_det['Equipo_Clean'] = df_det[col_equipo].astype(str).str.strip()
             
-            agrup_det = df_det.groupby(['Línea', col_semana, col_equipo]).agg(
-                detenciones=(col_equipo, 'count'),
+            agrup_det = df_det.groupby(['Linea_Clean', 'Semana_Clean', 'Equipo_Clean']).agg(
+                detenciones=('Equipo_Clean', 'count'),
                 tpo_perdido_hrs=('Hrs_Perdidas', 'sum')
             ).reset_index()
-            # Estandarizamos el nombre para el cruce
-            agrup_det.rename(columns={col_equipo: 'Equipo'}, inplace=True)
             
-            # --- LÓGICA FLEXIBLE PARA TIEMPOS PLANIFICADOS ---
-            col_sem_tpo = 'N° Semana' if 'N° Semana' in df_tpo.columns else 'Semana'
+            # --- LIMPIEZA TIEMPOS PLANIFICADOS ---
+            col_semana_tpo = buscar_columna(df_tpo.columns, ['semana'], excluir='aux')
+            col_linea_tpo = buscar_columna(df_tpo.columns, ['linea'])
+            col_tpo_op, is_op_min = buscar_tiempo_operativo(df_tpo.columns)
             
-            # Buscar la columna correcta de tiempo operativo
-            if 'Tpo Operativo [hr]' in df_tpo.columns:
-                col_tpo_op = 'Tpo Operativo [hr]'
-            elif 'Tpo hr real' in df_tpo.columns:
-                col_tpo_op = 'Tpo hr real'
-            else:
-                col_tpo_op = [c for c in df_tpo.columns if 'operativo' in c.lower() or 'real' in c.lower()][0]
-            
-            df_tpo = df_tpo.dropna(subset=['Línea', col_sem_tpo])
+            if not all([col_semana_tpo, col_linea_tpo, col_tpo_op]):
+                print(f"   ❌ Faltan columnas en Tiempos. (Sem:{col_semana_tpo}, Lin:{col_linea_tpo}, Tpo:{col_tpo_op})")
+                continue
+
+            df_tpo = df_tpo.dropna(subset=[col_linea_tpo, col_semana_tpo])
             df_tpo['Tpo_Op_Num'] = pd.to_numeric(df_tpo[col_tpo_op], errors='coerce').fillna(0)
+            if is_op_min: df_tpo['Tpo_Op_Num'] /= 60.0
             
-            agrup_tpo = df_tpo.groupby(['Línea', col_sem_tpo]).agg(
+            df_tpo['Linea_Clean'] = df_tpo[col_linea_tpo].astype(str).str.strip().str.upper()
+            df_tpo['Semana_Clean'] = df_tpo[col_semana_tpo].astype(str).str.strip()
+            
+            agrup_tpo = df_tpo.groupby(['Linea_Clean', 'Semana_Clean']).agg(
                 tpo_operativo_linea_hrs=('Tpo_Op_Num', 'sum')
             ).reset_index()
             
-            # --- MERGE (CRUCE) ---
-            df_final = pd.merge(agrup_det, agrup_tpo, left_on=['Línea', col_semana], right_on=['Línea', col_sem_tpo], how='left')
+            # --- MERGE (CRUCE EXACTO) ---
+            df_final = pd.merge(agrup_det, agrup_tpo, on=['Linea_Clean', 'Semana_Clean'], how='left')
             
             for _, row in df_final.iterrows():
                 datos_equipos.append({
                     "planta": planta_nombre,
-                    "linea": str(row['Línea']),
-                    "equipo": str(row['Equipo']),
-                    "semana": str(int(row[col_semana])),
+                    "linea": str(row['Linea_Clean']),
+                    "equipo": str(row['Equipo_Clean']),
+                    "semana": str(row['Semana_Clean']),
                     "detenciones": int(row['detenciones']),
                     "tpo_perdido_hrs": float(row['tpo_perdido_hrs']),
                     "tpo_operativo_linea_hrs": float(row['tpo_operativo_linea_hrs']) if pd.notna(row['tpo_operativo_linea_hrs']) else 0.0
                 })
+            print(f"   ✅ Procesado correctamente. Datos extraídos: {len(df_final)}")
                 
         except Exception as e:
-            print(f"      ❌ Error procesando {archivo_nombre}: {e}")
+            print(f"   ❌ Error fatal procesando {archivo_nombre}: {e}")
 
     # ==========================================
     # CÁLCULO MATEMÁTICO DE CONFIABILIDAD
     # ==========================================
-    print("   ⏳ Calculando MTBF, MTTR, Confiabilidad y Mantenibilidad...")
+    print("\n⏳ Calculando MTBF, MTTR, Confiabilidad y Mantenibilidad...")
     db_json = {}
     
     for idx, row in enumerate(datos_equipos):
@@ -148,6 +161,7 @@ def procesar_datos_confiabilidad():
         tpo_perd = row['tpo_perdido_hrs']
         tpo_op = row['tpo_operativo_linea_hrs']
         
+        # Mismas fórmulas exactas de tu Excel
         if det > 0:
             mttr = tpo_perd / det
             mtbf = tpo_op / det
@@ -159,14 +173,12 @@ def procesar_datos_confiabilidad():
             conf = 100.0
             mant = 100.0
             
-        prob_falla = 100 - conf
-        
         key_id = f"EQ_{idx+1}"
         db_json[key_id] = {
             "key_id": key_id,
             "planta": row['planta'],
             "linea": row['linea'],
-            "equipo": row['equipo'],
+            "equipo": row['equipo'].title(),
             "semana": row['semana'],
             "detenciones": det,
             "tpo_perdido_hrs": round(tpo_perd, 2),
@@ -175,10 +187,10 @@ def procesar_datos_confiabilidad():
             "mttr": round(mttr, 3) if det > 0 else 'N/A',
             "confiabilidad": round(conf, 2),
             "mantenibilidad": round(mant, 2),
-            "prob_falla": round(prob_falla, 2)
+            "prob_falla": round(100 - conf, 2)
         }
         
-    print(f"   ✅ Se procesaron {len(db_json)} registros consolidados exitosamente.")
+    print(f"✅ Dashboard alimentado con {len(db_json)} equipos.")
     return db_json
 
 # ==========================================
@@ -190,7 +202,6 @@ def generar_html_moderno(db_json):
     html_template = """<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Confiabilidad Walmart</title>
     <link rel="icon" type="image/x-icon" href="https://www.walmart.com/favicon.ico">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         :root { --primary: #0f172a; --secondary: #334155; --accent: #0ea5e9; --bg: #f8fafc; --border: #e2e8f0; --text: #1e293b; --muted: #64748b; --success: #10b981; --warn: #f59e0b; --danger: #ef4444; }
@@ -216,6 +227,7 @@ def generar_html_moderno(db_json):
         .f-group { margin-bottom: 15px; }
         .f-group label { font-size: 0.75rem; font-weight: 700; color: var(--muted); display: block; margin-bottom: 6px; text-transform: uppercase; }
         select, input[type="text"] { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.85rem; color: var(--text); }
+        select:focus, input:focus { border-color: var(--accent); }
         
         .btn-action { background: white; border: 1px solid var(--success); color: var(--success); padding: 8px 15px; border-radius: 6px; cursor: pointer; font-weight: 700; transition: 0.2s; display: flex; align-items: center; gap: 8px; }
         .btn-action:hover { background: var(--success); color: white; }
@@ -228,8 +240,8 @@ def generar_html_moderno(db_json):
         .list-item:hover { background: #f8fafc; } .list-item.selected { background: #f0f9ff; border-left-color: var(--accent); }
         .li-top { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--muted); font-weight: 600; margin-bottom: 5px; }
         .li-title { font-weight: 700; font-size: 1rem; color: var(--primary); margin-bottom: 8px; }
-        .li-btm { display: flex; justify-content: space-between; font-size: 0.8rem; }
-        .tag-conf { font-weight: 700; padding: 4px 8px; border-radius: 4px; }
+        .li-btm { display: flex; justify-content: space-between; font-size: 0.8rem; align-items: center;}
+        .tag-conf { font-weight: 700; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; }
         
         .col-detail { flex: 1; overflow-y: auto; padding: 40px; }
         .detail-card { background: white; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); border: 1px solid var(--border); padding: 30px; max-width: 900px; margin: 0 auto; }
@@ -283,15 +295,15 @@ def generar_html_moderno(db_json):
                 </div>
                 <div id="detail_view" class="detail-card" style="display:none">
                     <div style="border-bottom: 1px solid var(--border); padding-bottom: 20px; margin-bottom: 20px;">
-                        <span id="d_semana" style="float:right; font-weight:700; color:var(--accent);"></span>
+                        <span id="d_semana" style="float:right; font-weight:700; color:var(--accent); background:var(--bg); padding:5px 15px; border-radius:20px;"></span>
                         <h2 id="d_equipo" style="margin:0; font-size:1.8rem; color:var(--primary);"></h2>
-                        <p id="d_planta_linea" style="margin:5px 0 0; color:var(--muted); font-weight:600;"></p>
+                        <p id="d_planta_linea" style="margin:5px 0 0; color:var(--muted); font-weight:600; text-transform:uppercase;"></p>
                     </div>
                     
                     <div class="metric-grid">
-                        <div class="metric-box"><small>Confiabilidad (R)</small><strong id="d_conf" style="color:var(--success);"></strong></div>
-                        <div class="metric-box"><small>Mantenibilidad (M)</small><strong id="d_mant" style="color:var(--accent);"></strong></div>
-                        <div class="metric-box"><small>Prob. de Falla (Pf)</small><strong id="d_prob" style="color:var(--danger);"></strong></div>
+                        <div class="metric-box" style="border-top: 4px solid var(--success);"><small>Confiabilidad (R)</small><strong id="d_conf" style="color:var(--success);"></strong></div>
+                        <div class="metric-box" style="border-top: 4px solid var(--accent);"><small>Mantenibilidad (M)</small><strong id="d_mant" style="color:var(--accent);"></strong></div>
+                        <div class="metric-box" style="border-top: 4px solid var(--danger);"><small>Prob. de Falla (Pf)</small><strong id="d_prob" style="color:var(--danger);"></strong></div>
                     </div>
                     
                     <div class="metric-grid" style="margin-top:15px;">
@@ -309,19 +321,17 @@ def generar_html_moderno(db_json):
         </div>
 
         <div id="view_charts" class="graficos-layout" style="display:none;">
-            <div class="chart-card"><div class="chart-title">Confiabilidad Promedio por Planta</div><div class="canvas-container"><canvas id="chart1"></canvas></div></div>
+            <div class="chart-card"><div class="chart-title">Confiabilidad Promedio por Planta (%)</div><div class="canvas-container"><canvas id="chart1"></canvas></div></div>
             <div class="chart-card"><div class="chart-title">Distribución de Tiempos Perdidos (Hrs)</div><div class="canvas-container"><canvas id="chart2"></canvas></div></div>
             <div class="chart-card wide"><div class="chart-title">Top 10 Equipos con Mayor Probabilidad de Falla</div><div class="canvas-container"><canvas id="chart3"></canvas></div></div>
         </div>
     </div>
 
     <script>
-    Chart.register(ChartDataLabels);
-    Chart.defaults.plugins.datalabels.display = false;
     Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 
     const db = __DB_JSON_DATA__;
-    const records = Object.values(db);
+    const records = Object.values(db).sort((a,b) => b.prob_falla - a.prob_falla);
     let currentData = [];
 
     function buildFilters() {
@@ -367,13 +377,13 @@ def generar_html_moderno(db_json):
         currentData.forEach(d => {
             let item = document.createElement('div');
             item.className = 'list-item';
-            let colorConf = d.confiabilidad > 80 ? '#10b981' : (d.confiabilidad > 50 ? '#f59e0b' : '#ef4444');
+            let colorConf = d.confiabilidad >= 80 ? '#10b981' : (d.confiabilidad >= 50 ? '#f59e0b' : '#ef4444');
             item.innerHTML = `
                 <div class="li-top"><span>${d.planta} | ${d.linea}</span><span>Sem: ${d.semana}</span></div>
                 <div class="li-title">${d.equipo}</div>
                 <div class="li-btm">
                     <span>Fallas: <b>${d.detenciones}</b></span>
-                    <span class="tag-conf" style="background:${colorConf}20; color:${colorConf};">R: ${d.confiabilidad}%</span>
+                    <span class="tag-conf" style="background:${colorConf}15; color:${colorConf}; border: 1px solid ${colorConf}40;">R: ${d.confiabilidad}%</span>
                 </div>
             `;
             item.onclick = () => {
@@ -417,10 +427,11 @@ def generar_html_moderno(db_json):
         if(currentData.length === 0) return alert("No hay datos para exportar");
         const ws = XLSX.utils.json_to_sheet(currentData);
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Base_Confiabilidad");
-        XLSX.writeFile(wb, `Reporte_Confiabilidad.xlsx`);
+        XLSX.utils.book_append_sheet(wb, ws, "Confiabilidad");
+        XLSX.writeFile(wb, `Reporte_Confiabilidad_Semana_${document.getElementById('f_semana').value}.xlsx`);
     }
 
+    let chartInstances = {};
     function drawCharts() {
         if(currentData.length === 0) return;
         
@@ -432,10 +443,10 @@ def generar_html_moderno(db_json):
             return items.length > 0 ? items.reduce((sum, d)=>sum+d.confiabilidad, 0) / items.length : 0;
         });
 
-        getFreshCanvas('chart1');
-        new Chart(document.getElementById('chart1'), {
+        if(chartInstances['chart1']) chartInstances['chart1'].destroy();
+        chartInstances['chart1'] = new Chart(document.getElementById('chart1'), {
             type: 'bar',
-            data: { labels: plantas, datasets: [{ label: '% Confiabilidad Promedio', data: confProm, backgroundColor: '#0ea5e9', borderRadius: 4 }] },
+            data: { labels: plantas, datasets: [{ label: '% Confiabilidad Promedio', data: confProm, backgroundColor: '#0ea5e9', borderRadius: 6 }] },
             options: { ...opts, scales: { y: { max: 100 } } }
         });
 
@@ -444,30 +455,23 @@ def generar_html_moderno(db_json):
             return items.reduce((sum, d)=>sum+d.tpo_perdido_hrs, 0);
         });
 
-        getFreshCanvas('chart2');
-        new Chart(document.getElementById('chart2'), {
+        if(chartInstances['chart2']) chartInstances['chart2'].destroy();
+        chartInstances['chart2'] = new Chart(document.getElementById('chart2'), {
             type: 'doughnut',
             data: { labels: plantas, datasets: [{ data: tpoPerdido, backgroundColor: ['#ef4444', '#f59e0b', '#10b981', '#8b5cf6'], borderWidth: 2 }] },
             options: opts
         });
 
         let topFallas = [...currentData].sort((a,b)=> b.prob_falla - a.prob_falla).slice(0,10);
-        getFreshCanvas('chart3');
-        new Chart(document.getElementById('chart3'), {
+        if(chartInstances['chart3']) chartInstances['chart3'].destroy();
+        chartInstances['chart3'] = new Chart(document.getElementById('chart3'), {
             type: 'bar',
             data: { 
                 labels: topFallas.map(d=> d.equipo.length > 20 ? d.equipo.substring(0,20)+'...' : d.equipo), 
-                datasets: [{ label: 'Probabilidad de Falla (%)', data: topFallas.map(d=>d.prob_falla), backgroundColor: '#ef4444', borderRadius: 4 }] 
+                datasets: [{ label: 'Probabilidad de Falla (%)', data: topFallas.map(d=>d.prob_falla), backgroundColor: '#ef4444', borderRadius: 6 }] 
             },
             options: { ...opts, indexAxis: 'y', scales: { x: { max: 100 } } }
         });
-    }
-
-    function getFreshCanvas(id) {
-        let old = document.getElementById(id);
-        if(!old) return;
-        let p = old.parentElement;
-        p.innerHTML = `<canvas id="${id}"></canvas>`;
     }
 
     window.onload = () => {
@@ -482,8 +486,6 @@ def generar_html_moderno(db_json):
     
     with open(OUTPUT_HTML, "w", encoding="utf-8") as f: 
         f.write(full_html)
-        
-    print(f"\n✅ REPORTE GENERADO CON ÉXITO EN: {OUTPUT_HTML}")
 
 if __name__ == "__main__":
     db = procesar_datos_confiabilidad()
