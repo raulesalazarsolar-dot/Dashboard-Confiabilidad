@@ -14,6 +14,9 @@ DRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/1xXeea_F6HTsI-Wfj7HP2
 DATA_DIR = "./data"
 OUTPUT_HTML = "index.html"
 
+TIEMPO_MISION_HRS = 120
+TIEMPO_IDEAL_REP_HRS = 1
+
 # ==========================================
 # 2. BUSCADORES ESTRICTOS DE COLUMNAS
 # ==========================================
@@ -21,43 +24,35 @@ def buscar_columna_linea(columnas):
     for c in columnas:
         if c.strip() == 'Línea': return c
     for c in columnas:
-        if c.strip().lower() == 'línea': return c
+        if c.strip() == 'Linea': return c
     for c in columnas:
-        if c.strip().lower() == 'linea': return c
+        if str(c).strip().lower().replace('í', 'i') == 'linea': return c
     return None
 
 def buscar_columna_equipo(columnas):
     for c in columnas:
-        if c.strip().lower() == 'equipo': return c
+        if str(c).strip().lower() == 'equipo': return c
     for c in columnas:
-        if c.strip().lower() == 'componente': return c
+        if str(c).strip().lower() == 'componente': return c
     return None
 
 def buscar_columna_semana(columnas):
     for c in columnas:
-        if 'n° semana' in c.strip().lower(): return c
+        if 'n° semana' in str(c).strip().lower(): return c
     for c in columnas:
-        if 'semana' in c.strip().lower() and 'aux' not in c.strip().lower(): return c
+        if 'semana' in str(c).strip().lower() and 'aux' not in str(c).strip().lower(): return c
     return None
 
 def buscar_tiempo_detencion_hr(columnas):
     for c in columnas:
         cl = str(c).lower().strip().replace('  ', ' ')
-        if 'tpo detenciones [hr]' in cl or 'tpo detencion [hr]' in cl or 'tpo detenciones [hr]]' in cl: return c
-    for c in columnas:
-        cl = str(c).lower().strip()
-        if 'detencion' in cl and 'hr' in cl: return c
+        if cl == 'tpo detenciones [hr]]' or cl == 'tpo detenciones [hr]' or cl == 'tpo detencion [hr]': return c
     return None
 
 def buscar_tiempo_planificado_hr(columnas):
     for c in columnas:
         cl = str(c).lower().strip().replace('  ', ' ')
-        if 'tpo hr plan' in cl: return c
-        if 'tpo disponible [total turno hr]' in cl: return c
-    for c in columnas:
-        cl = str(c).lower().strip()
-        if 'plan' in cl and 'hr' in cl: return c
-        if 'disponible' in cl and 'hr' in cl: return c
+        if cl == 'tpo hr plan' or cl == 'tpo disponible [total turno hr]': return c
     return None
 
 # ==========================================
@@ -74,7 +69,9 @@ def procesar_datos_confiabilidad():
 
     print("\n🚀 INICIANDO EXTRACCIÓN DE DATOS BASE...")
     archivos = [f for f in os.listdir(DATA_DIR) if f.endswith('.xlsx') and not f.startswith('~')]
+    
     datos_equipos = []
+    datos_lineas = []
     
     for archivo_nombre in archivos:
         ruta_completa = os.path.join(DATA_DIR, archivo_nombre)
@@ -101,7 +98,7 @@ def procesar_datos_confiabilidad():
             col_tpo_det = buscar_tiempo_detencion_hr(df_det.columns)
             
             if not all([col_equipo, col_semana_det, col_linea_det, col_tpo_det]):
-                print(f"   ❌ Faltan columnas en FEM. Eq:{col_equipo}, Sem:{col_semana_det}, Lin:{col_linea_det}, Tpo:{col_tpo_det}")
+                print(f"   ❌ Faltan columnas clave en Detenciones FEM.")
                 continue
 
             df_det = df_det.dropna(subset=[col_equipo, col_semana_det, col_linea_det])
@@ -111,7 +108,7 @@ def procesar_datos_confiabilidad():
             df_det['Semana_Clean'] = pd.to_numeric(df_det[col_semana_det], errors='coerce').fillna(-1).astype(int)
             df_det['Equipo_Clean'] = df_det[col_equipo].astype(str).str.strip().str.title()
             
-            df_det = df_det[df_det['Semana_Clean'] > 0] # Filtrar basura
+            df_det = df_det[df_det['Semana_Clean'] > 0]
             
             # Agrupar Tpo Perdido a nivel de LÍNEA
             agrup_det_linea = df_det.groupby(['Linea_Clean', 'Semana_Clean']).agg(
@@ -130,7 +127,7 @@ def procesar_datos_confiabilidad():
             col_tpo_plan = buscar_tiempo_planificado_hr(df_tpo.columns)
             
             if not all([col_semana_tpo, col_linea_tpo, col_tpo_plan]):
-                print(f"   ❌ Faltan columnas en Planificados. Sem:{col_semana_tpo}, Lin:{col_linea_tpo}, Tpo:{col_tpo_plan}")
+                print(f"   ❌ Faltan columnas en Planificados.")
                 continue
 
             df_tpo = df_tpo.dropna(subset=[col_linea_tpo, col_semana_tpo])
@@ -150,10 +147,19 @@ def procesar_datos_confiabilidad():
             linea_merged['tpo_perdido_linea'] = linea_merged['tpo_perdido_linea'].fillna(0)
             linea_merged['tpo_operativo_linea'] = (linea_merged['tpo_plan_linea'] - linea_merged['tpo_perdido_linea']).clip(lower=0)
             
-            # --- CRUCE FINAL CON EQUIPOS ---
-            df_final = pd.merge(agrup_det_eq, linea_merged, on=['Linea_Clean', 'Semana_Clean'], how='left')
-            
-            for _, row in df_final.iterrows():
+            # GUARDAR DATOS DE LÍNEAS (Para no perder el tpo operativo si no hay fallas)
+            for _, row in linea_merged.iterrows():
+                datos_lineas.append({
+                    "super_planta": super_planta,
+                    "planta": planta_nombre,
+                    "linea": row['Linea_Clean'],
+                    "semana": int(row['Semana_Clean']),
+                    "tpo_operativo_linea": float(row.get('tpo_operativo_linea', 0))
+                })
+
+            # GUARDAR DATOS DE EQUIPOS
+            df_final_eq = pd.merge(agrup_det_eq, linea_merged, on=['Linea_Clean', 'Semana_Clean'], how='left')
+            for _, row in df_final_eq.iterrows():
                 datos_equipos.append({
                     "super_planta": super_planta,
                     "planta": planta_nombre,
@@ -161,21 +167,23 @@ def procesar_datos_confiabilidad():
                     "equipo": row['Equipo_Clean'],
                     "semana": int(row['Semana_Clean']),
                     "detenciones": int(row['detenciones']),
-                    "tpo_perdido_eq": float(row['tpo_perdido_eq']),
-                    "tpo_operativo_linea": float(row.get('tpo_operativo_linea', 0))
+                    "tpo_perdido_eq": float(row['tpo_perdido_eq'])
                 })
-            print(f"   ✅ Procesado. Extraídos {len(df_final)} registros.")
+                
+            print(f"   ✅ Procesado. Extraídos {len(df_final_eq)} fallas en equipos.")
                 
         except Exception as e:
             print(f"   ❌ Error fatal procesando {archivo_nombre}: {e}")
 
-    print(f"\n✅ Extracción finalizada. {len(datos_equipos)} registros listos para JS.")
-    return datos_equipos
+    # Estructura maestra JSON
+    db_json = { "equipos": datos_equipos, "lineas": datos_lineas }
+    print(f"\n✅ Extracción finalizada. Datos listos para el Dashboard.")
+    return db_json
 
 # ==========================================
 # 4. GENERADOR HTML DASHBOARD
 # ==========================================
-def generar_html_moderno(datos_brutos):
+def generar_html_moderno(db_json):
     fecha_actual = datetime.now(ZoneInfo("America/Santiago")).strftime("%d/%m/%Y %H:%M")
     
     html_template = """<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Dashboard Confiabilidad</title>
@@ -308,7 +316,7 @@ def generar_html_moderno(datos_brutos):
 
             <div class="charts-row">
                 <div class="chart-container">
-                    <div class="chart-header">📈 Tendencia de Confiabilidad y Prob. Falla (Evolución Semanal)</div>
+                    <div class="chart-header">📈 Tendencia de Confiabilidad y Prob. Falla (Semanal)</div>
                     <div class="canvas-wrapper"><canvas id="chart_trend_conf"></canvas></div>
                 </div>
                 <div class="chart-container">
@@ -329,7 +337,7 @@ def generar_html_moderno(datos_brutos):
                                 <th onclick="sortTable(0)">Planta ↕</th>
                                 <th onclick="sortTable(1)">Línea ↕</th>
                                 <th onclick="sortTable(2)">Equipo ↕</th>
-                                <th onclick="sortTable(3)">Cant. Detenciones ↕</th>
+                                <th onclick="sortTable(3)">Detenciones ↕</th>
                                 <th onclick="sortTable(4)">Tpo Perdido (Hrs) ↕</th>
                                 <th onclick="sortTable(5)">MTBF ↕</th>
                                 <th onclick="sortTable(6)">MTTR ↕</th>
@@ -350,10 +358,12 @@ def generar_html_moderno(datos_brutos):
     Chart.defaults.color = '#64748b';
 
     const dbRaw = __DB_JSON_DATA__;
+    const recordsEq = dbRaw.equipos;
+    const recordsLn = dbRaw.lineas;
     
     let isCarnesTheme = false;
-    let baseData = []; 
-    let currentData = [];
+    let currentEqData = [];
+    let currentLnData = [];
     let tableDataFull = []; 
     let chartInstances = {};
 
@@ -369,14 +379,14 @@ def generar_html_moderno(datos_brutos):
             document.getElementById('lbl_carnes').classList.remove('active');
         }
         
-        baseData = dbRaw.filter(d => isCarnesTheme ? d.super_planta === 'Carnes' : d.super_planta === 'Masas');
         buildFilters();
         applyFilters();
     }
 
     function buildFilters() {
-        let semanasUnicas = [...new Set(baseData.map(x=>x.semana))].sort((a,b)=>a-b);
+        let baseLn = recordsLn.filter(d => isCarnesTheme ? d.super_planta === 'Carnes' : d.super_planta === 'Masas');
         
+        let semanasUnicas = [...new Set(baseLn.map(x=>x.semana))].sort((a,b)=>a-b);
         let htmlDesde = '';
         let htmlHasta = '';
         semanasUnicas.forEach((s, idx) => {
@@ -393,8 +403,8 @@ def generar_html_moderno(datos_brutos):
         };
         
         let htmlDyn = '';
-        htmlDyn += createSelect('f_planta', '🏢 Planta', [...new Set(baseData.map(x=>x.planta))]);
-        htmlDyn += createSelect('f_linea', '🏭 Línea', [...new Set(baseData.map(x=>x.linea))]);
+        htmlDyn += createSelect('f_planta', '🏢 Planta', [...new Set(baseLn.map(x=>x.planta))]);
+        htmlDyn += createSelect('f_linea', '🏭 Línea', [...new Set(baseLn.map(x=>x.linea))]);
         document.getElementById('filters_dynamic').innerHTML = htmlDyn;
     }
 
@@ -404,23 +414,34 @@ def generar_html_moderno(datos_brutos):
         const fPla = document.getElementById('f_planta').value;
         const fLin = document.getElementById('f_linea').value;
 
-        currentData = baseData.filter(d => {
+        currentLnData = recordsLn.filter(d => {
+            if(isCarnesTheme ? d.super_planta !== 'Carnes' : d.super_planta !== 'Masas') return false;
             if(d.semana < sDesde || d.semana > sHasta) return false;
             if(fPla !== 'ALL' && d.planta !== fPla) return false;
             if(fLin !== 'ALL' && d.linea !== fLin) return false;
             return true;
         });
 
-        // Agrupar la matemática en JS acumulando todo el rango de tiempo
-        let lineasUnicas = {};
-        let eqMap = {};
+        currentEqData = recordsEq.filter(d => {
+            if(isCarnesTheme ? d.super_planta !== 'Carnes' : d.super_planta !== 'Masas') return false;
+            if(d.semana < sDesde || d.semana > sHasta) return false;
+            if(fPla !== 'ALL' && d.planta !== fPla) return false;
+            if(fLin !== 'ALL' && d.linea !== fLin) return false;
+            return true;
+        });
 
-        currentData.forEach(d => {
-            let lineKey = d.planta + "|" + d.linea + "|" + d.semana;
-            if(!lineasUnicas[lineKey]) {
-                lineasUnicas[lineKey] = d.tpo_operativo_linea;
-            }
-            
+        // 1. Acumular Tiempo Operativo por Linea
+        let opTimeByLine = {};
+        let totalOperativoGlobal = 0;
+        currentLnData.forEach(d => {
+            let k = d.planta + "|" + d.linea;
+            opTimeByLine[k] = (opTimeByLine[k] || 0) + d.tpo_operativo_linea;
+            totalOperativoGlobal += d.tpo_operativo_linea;
+        });
+
+        // 2. Acumular Detenciones y Tiempo Perdido por Equipo
+        let eqMap = {};
+        currentEqData.forEach(d => {
             let eqKey = d.planta + "|" + d.linea + "|" + d.equipo;
             if(!eqMap[eqKey]) {
                 eqMap[eqKey] = { p: d.planta, l: d.linea, e: d.equipo, det: 0, tpop: 0 };
@@ -429,33 +450,19 @@ def generar_html_moderno(datos_brutos):
             eqMap[eqKey].tpop += d.tpo_perdido_eq;
         });
 
-        // Sumar horas operativas de las líneas seleccionadas en el rango
-        let lineOpTime = {};
-        let totalOperativoGlobal = 0;
-        for(let key in lineasUnicas) {
-            let [p, l, s] = key.split('|');
-            let pl = p + "|" + l;
-            lineOpTime[pl] = (lineOpTime[pl] || 0) + lineasUnicas[key];
-            totalOperativoGlobal += lineasUnicas[key];
-        }
-
         // --- APLICACIÓN EXACTA DE FÓRMULAS DE LA IMAGEN ---
         tableDataFull = Object.values(eqMap).map(d => {
-            let opTime = lineOpTime[d.p + "|" + d.l] || 0;
+            let opTime = opTimeByLine[d.p + "|" + d.l] || 0;
             
-            // MTBF = tiempo operación de la linea / Cant. Detenciones
+            // MTBF = Tiempo Operativo Linea / Detenciones
             let mtbf = d.det > 0 ? (opTime / d.det) : 0;
             
-            // MTTR = Tpo. Perdido del equipo / Cant. Detenciones
+            // MTTR = Tiempo Perdido Equipo / Detenciones
             let mttr = d.det > 0 ? (d.tpop / d.det) : 0;
             
-            // Confiabilidad = EXP(-120/MTBF)
+            // Confiabilidad y Mantenibilidad Exponencial
             let conf = mtbf > 0 ? Math.exp(-120 / mtbf) * 100 : (d.det === 0 ? 100 : 0);
-            
-            // Mantenibilidad = 1 - EXP(-1/MTTR)
             let mant = mttr > 0 ? (1 - Math.exp(-1 / mttr)) * 100 : 100;
-            
-            // Probabilidad de falla = 100% - confiabilidad
             let prob = 100 - conf;
             
             return { ...d, opTime, mtbf, mttr, conf, mant, prob };
@@ -482,7 +489,7 @@ def generar_html_moderno(datos_brutos):
     }
 
     function drawCharts(sDesde, sHasta) {
-        if(currentData.length === 0) return;
+        if(currentLnData.length === 0) return;
         
         const accentColor = isCarnesTheme ? '#dc2626' : '#0ea5e9';
         const secColor = isCarnesTheme ? '#991b1b' : '#334155';
@@ -496,21 +503,19 @@ def generar_html_moderno(datos_brutos):
         let mttrTrend = [];
 
         weeks.forEach(w => {
-            let dw = currentData.filter(d => d.semana === w);
+            let dLn = currentLnData.filter(d => d.semana === w);
+            let dEq = currentEqData.filter(d => d.semana === w);
             
-            let lu = {};
-            dw.forEach(d => { lu[d.planta+"|"+d.linea] = d.tpo_operativo_linea; });
-            let sOp = Object.values(lu).reduce((a,b)=>a+b, 0);
+            let sOp = dLn.reduce((s, d) => s + d.tpo_operativo_linea, 0);
+            let sPerd = dEq.reduce((s, d) => s + d.tpo_perdido_eq, 0);
+            let sDet = dEq.reduce((s, d) => s + d.detenciones, 0);
             
-            let sPerd = dw.reduce((s, d) => s + d.tpo_perdido_eq, 0);
-            let sDet = dw.reduce((s, d) => s + d.detenciones, 0);
-            
-            let wMtbf = sDet > 0 ? (sOp / sDet) : 0;
+            let wMtbf = sDet > 0 ? (sOp / sDet) : (sOp > 0 ? sOp : 0);
             let wMttr = sDet > 0 ? (sPerd / sDet) : 0;
-            let wConf = wMtbf > 0 ? Math.exp(-120 / wMtbf) * 100 : (sDet === 0 ? 100 : 0);
+            let wConf = sDet > 0 ? Math.exp(-120 / wMtbf) * 100 : (sOp > 0 ? 100 : 0);
             
             confTrend.push(wConf.toFixed(2));
-            probTrend.push((100-wConf).toFixed(2));
+            probTrend.push((sOp > 0 ? 100-wConf : 0).toFixed(2));
             mtbfTrend.push(wMtbf.toFixed(2));
             mttrTrend.push(wMttr.toFixed(2));
         });
@@ -559,7 +564,7 @@ def generar_html_moderno(datos_brutos):
             tbl = tbl.filter(d => `${d.p} ${d.l} ${d.e}`.toLowerCase().includes(search));
         }
 
-        tbl.sort((a,b) => a.conf - b.conf);
+        tbl.sort((a,b) => a.conf - b.conf); // Los peores equipos primero
 
         tbl.forEach(d => {
             let badgeClass = d.conf >= 80 ? 'b-ok' : (d.conf >= 50 ? 'b-warn' : 'b-danger');
@@ -615,14 +620,14 @@ def generar_html_moderno(datos_brutos):
         const ws = XLSX.utils.json_to_sheet(exportData);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Base_Acumulada");
-        XLSX.writeFile(wb, `Matriz_Confiabilidad.xlsx`);
+        XLSX.writeFile(wb, `Matriz_Confiabilidad_Acumulada.xlsx`);
     }
 
     window.onload = () => toggleTheme();
     </script>
 </body></html>"""
 
-    full_html = html_template.replace("__DB_JSON_DATA__", json.dumps(datos_brutos))
+    full_html = html_template.replace("__DB_JSON_DATA__", json.dumps(db_json))
     full_html = full_html.replace("__FECHA_ACTUAL__", fecha_actual)
     
     with open(OUTPUT_HTML, "w", encoding="utf-8") as f: 
