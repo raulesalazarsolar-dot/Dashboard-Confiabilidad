@@ -32,13 +32,11 @@ def buscar_columna(columnas, palabras_clave, excluir=None):
     return None
 
 def buscar_tiempo_detencion(columnas):
-    # Prioridad 1: Tiempo total expresamente en minutos u horas
     for c in columnas:
         cl = str(c).lower().replace('ó','o')
         if 'std' in cl: continue
         if 'total [min]' in cl: return c, True
         if 'detencion [hr]' in cl: return c, False
-    # Prioridad 2: Fallback general
     for c in columnas:
         cl = str(c).lower().replace('ó','o')
         if 'std' in cl: continue
@@ -89,6 +87,9 @@ def procesar_datos_confiabilidad():
             df_tpo = pd.read_excel(excel, sheet_name=hoja_tpo)
             planta_nombre = archivo_nombre.replace("Confiabilidad ", "").replace(".xlsx", "").strip()
             
+            # Clasificación del Mundo: Carnes vs Masas
+            super_planta = "Carnes" if "carne" in planta_nombre.lower() else "Masas"
+            
             # --- LIMPIEZA DETENCIONES ---
             col_equipo = buscar_columna(df_det.columns, ['equipo', 'componente'])
             col_semana_det = buscar_columna(df_det.columns, ['semana'], excluir='aux')
@@ -96,7 +97,6 @@ def procesar_datos_confiabilidad():
             col_tpo_det, is_det_min = buscar_tiempo_detencion(df_det.columns)
             
             if not all([col_equipo, col_semana_det, col_linea_det, col_tpo_det]):
-                print(f"   ❌ Faltan columnas en Detenciones. (Eq:{col_equipo}, Sem:{col_semana_det}, Lin:{col_linea_det}, Tpo:{col_tpo_det})")
                 continue
 
             df_det = df_det.dropna(subset=[col_equipo, col_semana_det, col_linea_det])
@@ -118,7 +118,6 @@ def procesar_datos_confiabilidad():
             col_tpo_op, is_op_min = buscar_tiempo_operativo(df_tpo.columns)
             
             if not all([col_semana_tpo, col_linea_tpo, col_tpo_op]):
-                print(f"   ❌ Faltan columnas en Tiempos. (Sem:{col_semana_tpo}, Lin:{col_linea_tpo}, Tpo:{col_tpo_op})")
                 continue
 
             df_tpo = df_tpo.dropna(subset=[col_linea_tpo, col_semana_tpo])
@@ -137,6 +136,7 @@ def procesar_datos_confiabilidad():
             
             for _, row in df_final.iterrows():
                 datos_equipos.append({
+                    "super_planta": super_planta,
                     "planta": planta_nombre,
                     "linea": str(row['Linea_Clean']),
                     "equipo": str(row['Equipo_Clean']),
@@ -176,15 +176,16 @@ def procesar_datos_confiabilidad():
         key_id = f"EQ_{idx+1}"
         db_json[key_id] = {
             "key_id": key_id,
+            "super_planta": row['super_planta'],
             "planta": row['planta'],
             "linea": row['linea'],
             "equipo": row['equipo'].title(),
-            "semana": row['semana'],
+            "semana": int(float(row['semana'])) if row['semana'].replace('.','').isdigit() else row['semana'],
             "detenciones": det,
             "tpo_perdido_hrs": round(tpo_perd, 2),
             "tpo_operativo_hrs": round(tpo_op, 2),
-            "mtbf": round(mtbf, 2) if det > 0 else 'N/A',
-            "mttr": round(mttr, 3) if det > 0 else 'N/A',
+            "mtbf": round(mtbf, 2) if det > 0 else 0,
+            "mttr": round(mttr, 3) if det > 0 else 0,
             "confiabilidad": round(conf, 2),
             "mantenibilidad": round(mant, 2),
             "prob_falla": round(100 - conf, 2)
@@ -204,279 +205,442 @@ def generar_html_moderno(db_json):
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
-        :root { --primary: #0f172a; --secondary: #334155; --accent: #0ea5e9; --bg: #f8fafc; --border: #e2e8f0; --text: #1e293b; --muted: #64748b; --success: #10b981; --warn: #f59e0b; --danger: #ef4444; }
+        :root { 
+            --primary: #0f172a; 
+            --secondary: #1e293b; 
+            --accent: #0ea5e9; 
+            --bg: #f1f5f9; 
+            --surface: #ffffff; 
+            --border: #e2e8f0; 
+            --text: #0f172a; 
+            --text-muted: #64748b; 
+            --success: #10b981; 
+            --danger: #ef4444; 
+            --warning: #f59e0b; 
+        }
+        body.theme-carnes {
+            --primary: #450a0a; 
+            --secondary: #7f1d1d; 
+            --accent: #dc2626; 
+            --bg: #fef2f2;
+            --border: #fecaca;
+        }
         * { box-sizing: border-box; outline: none; font-family: 'Segoe UI', system-ui, sans-serif; }
-        body { background: transparent; color: var(--text); margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        body { background: var(--bg); color: var(--text); margin: 0; display: flex; flex-direction: column; min-height: 100vh; transition: background 0.4s; }
         
-        .top-bar { background: var(--primary); color: white; padding: 0 20px; height: 60px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; z-index: 10; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .brand { flex: 1; }
-        .brand h2 { margin: 0; font-size: 1.2rem; display:flex; align-items:center; gap: 8px; } 
-        .brand span { opacity: 0.7; font-weight: 300; font-size: 0.95rem; }
+        .top-bar { background: var(--primary); color: white; padding: 0 25px; height: 65px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); z-index: 10; transition: background 0.4s; }
+        .brand { display: flex; align-items: center; gap: 15px; }
+        .brand h2 { margin: 0; font-size: 1.3rem; font-weight: 700; letter-spacing: 0.5px; } 
+        .brand span { opacity: 0.7; font-weight: 400; font-size: 1rem; border-left: 1px solid rgba(255,255,255,0.3); padding-left: 15px; }
 
-        .tabs-container { background: white; border-bottom: 1px solid var(--border); padding: 0 20px; flex-shrink: 0; display:flex; justify-content: space-between; align-items: center; z-index: 5; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-        .tabs-nav { display: flex; gap: 15px; }
-        .tab-btn { background: none; border: none; padding: 15px 5px; font-weight: 600; color: var(--muted); cursor: pointer; border-bottom: 3px solid transparent; transition: 0.2s; font-size: 0.95rem; }
-        .tab-btn:hover { color: var(--accent); } .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
-        
-        .app-layout { display: flex; height: calc(100vh - 110px); width: 100%; overflow: hidden; }
-        
-        .col-filters { width: 280px; background: #fff; border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; z-index: 5; }
-        .filters-header { padding: 15px 20px; border-bottom: 1px solid var(--border); font-weight: 700; color: var(--primary); font-size: 0.9rem; text-transform: uppercase; background: #f8fafc; display: flex; justify-content: space-between; align-items: center; }
-        .filters-body { flex: 1; overflow-y: auto; padding: 20px; } 
-        
-        .f-group { margin-bottom: 15px; }
-        .f-group label { font-size: 0.75rem; font-weight: 700; color: var(--muted); display: block; margin-bottom: 6px; text-transform: uppercase; }
-        select, input[type="text"] { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.85rem; color: var(--text); }
-        select:focus, input:focus { border-color: var(--accent); }
-        
-        .btn-action { background: white; border: 1px solid var(--success); color: var(--success); padding: 8px 15px; border-radius: 6px; cursor: pointer; font-weight: 700; transition: 0.2s; display: flex; align-items: center; gap: 8px; }
-        .btn-action:hover { background: var(--success); color: white; }
+        /* Switch UI */
+        .planta-switch { display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 0.95rem; background: rgba(0,0,0,0.25); padding: 6px 20px; border-radius: 30px; border: 1px solid rgba(255,255,255,0.1); }
+        .planta-switch span { opacity: 0.5; transition: 0.3s; }
+        .planta-switch span.active { opacity: 1; color: #fff; }
+        .switch { position: relative; display: inline-block; width: 48px; height: 24px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(255,255,255,0.3); transition: .4s; border-radius: 34px; }
+        .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+        input:checked + .slider { background-color: #ef4444; }
+        input:checked + .slider:before { transform: translateX(24px); }
 
-        .col-list { width: 400px; background: #fff; border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
-        .list-header { padding: 20px; border-bottom: 1px solid var(--border); background: #f8fafc; }
-        .list-scroll-area { flex: 1; overflow-y: auto; }
+        .main-container { display: flex; flex: 1; overflow: hidden; }
         
-        .list-item { padding: 15px 20px; border-bottom: 1px solid var(--border); cursor: pointer; transition: 0.2s; border-left: 4px solid transparent; }
-        .list-item:hover { background: #f8fafc; } .list-item.selected { background: #f0f9ff; border-left-color: var(--accent); }
-        .li-top { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--muted); font-weight: 600; margin-bottom: 5px; }
-        .li-title { font-weight: 700; font-size: 1rem; color: var(--primary); margin-bottom: 8px; }
-        .li-btm { display: flex; justify-content: space-between; font-size: 0.8rem; align-items: center;}
-        .tag-conf { font-weight: 700; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; }
+        /* Sidebar Filters */
+        .sidebar { width: 280px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+        .filter-header { padding: 20px; border-bottom: 1px solid var(--border); font-weight: 700; color: var(--secondary); display: flex; justify-content: space-between; align-items: center; }
+        .filter-body { padding: 20px; flex: 1; overflow-y: auto; }
+        .f-group { margin-bottom: 20px; }
+        .f-group label { display: block; font-size: 0.75rem; font-weight: 700; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+        select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.9rem; color: var(--text); background: var(--bg); cursor: pointer; transition: 0.2s; }
+        select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2); }
+        .btn-export { background: var(--surface); border: 2px solid var(--success); color: var(--success); padding: 10px; border-radius: 8px; cursor: pointer; font-weight: 700; width: 100%; display: flex; justify-content: center; gap: 8px; transition: 0.2s; margin-top: 10px; }
+        .btn-export:hover { background: var(--success); color: white; }
         
-        .col-detail { flex: 1; overflow-y: auto; padding: 40px; }
-        .detail-card { background: white; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); border: 1px solid var(--border); padding: 30px; max-width: 900px; margin: 0 auto; }
+        /* Content Area */
+        .content { flex: 1; padding: 30px; overflow-y: auto; display: flex; flex-direction: column; gap: 25px; }
         
-        .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-top: 20px; }
-        .metric-box { background: var(--bg); padding: 20px; border-radius: 8px; border: 1px solid var(--border); text-align: center; }
-        .metric-box small { display: block; color: var(--muted); font-weight: 700; text-transform: uppercase; font-size: 0.75rem; margin-bottom: 5px; }
-        .metric-box strong { font-size: 1.8rem; color: var(--primary); }
+        /* KPI Cards */
+        .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; }
+        .kpi-card { background: var(--surface); padding: 20px; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 2px 4px rgba(0,0,0,0.02); display: flex; flex-direction: column; gap: 5px; position: relative; overflow: hidden; }
+        .kpi-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--accent); }
+        .kpi-card.c-red::before { background: var(--danger); }
+        .kpi-card.c-green::before { background: var(--success); }
+        .kpi-card span { font-size: 0.8rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; }
+        .kpi-card h3 { margin: 0; font-size: 2rem; color: var(--secondary); font-weight: 800; }
+        
+        /* Charts */
+        .charts-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); gap: 25px; }
+        .chart-container { background: var(--surface); padding: 20px; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 2px 4px rgba(0,0,0,0.02); height: 350px; display: flex; flex-direction: column; }
+        .chart-header { font-size: 1rem; font-weight: 700; color: var(--secondary); margin-bottom: 15px; display: flex; justify-content: space-between;}
+        .canvas-wrapper { flex: 1; position: relative; min-height: 0; }
 
-        .graficos-layout { flex: 1; padding: 30px; display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 25px; overflow-y: auto; align-content: start; }
-        .chart-card { background: white; padding: 25px; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); height: 400px; display: flex; flex-direction: column; }
-        .chart-card.wide { grid-column: 1 / -1; height: 450px; }
-        .chart-title { font-size: 1rem; font-weight: 700; color: var(--secondary); margin-bottom: 15px; text-transform: uppercase; text-align: center; }
-        .canvas-container { position: relative; flex: 1; min-height: 0; }
-        
-        .footer-date { font-size: 0.7rem; color: var(--muted); text-align: center; margin-top: 20px; font-weight: 600; }
+        /* Table */
+        .table-container { background: var(--surface); border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 2px 4px rgba(0,0,0,0.02); overflow: hidden; display: flex; flex-direction: column; }
+        .table-header { padding: 20px; border-bottom: 1px solid var(--border); font-weight: 700; color: var(--secondary); display: flex; justify-content: space-between; align-items: center;}
+        .table-header input { padding: 8px 15px; border: 1px solid var(--border); border-radius: 20px; font-size: 0.9rem; width: 300px; background: var(--bg); }
+        .table-wrapper { overflow-x: auto; max-height: 500px; }
+        table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.85rem; }
+        th { background: #f8fafc; padding: 12px 15px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; position: sticky; top: 0; z-index: 2; border-bottom: 2px solid var(--border); cursor: pointer; }
+        body.theme-carnes th { background: #fef2f2; }
+        td { padding: 12px 15px; border-bottom: 1px solid var(--border); color: var(--secondary); font-weight: 500; }
+        tr:hover td { background: var(--bg); }
+        .badge { padding: 4px 8px; border-radius: 6px; font-weight: 700; font-size: 0.75rem; }
+        .b-ok { background: #d1fae5; color: #047857; }
+        .b-warn { background: #fef3c7; color: #b45309; }
+        .b-danger { background: #fee2e2; color: #b91c1c; }
     </style>
 </head>
 <body>
     <div class="top-bar">
-        <div class="brand"><h2>📈 Dashboard Ingeniería de Mantenimiento <span>| Confiabilidad de Activos</span></h2></div>
-        <div><img src="https://upload.wikimedia.org/wikipedia/commons/b/b1/Walmart_logo_%282008%29.svg" alt="Walmart Logo" style="height: 30px; filter: brightness(0) invert(1);"></div>
+        <div class="brand">
+            <img src="https://upload.wikimedia.org/wikipedia/commons/b/b1/Walmart_logo_%282008%29.svg" alt="Walmart" style="height: 30px; filter: brightness(0) invert(1);">
+            <h2>Confiabilidad de Activos <span>Dashboard Gerencial</span></h2>
+        </div>
+        <div class="planta-switch">
+            <span id="lbl_masas" class="active">Masas</span>
+            <label class="switch">
+                <input type="checkbox" id="theme_toggle" onchange="toggleTheme()">
+                <span class="slider"></span>
+            </label>
+            <span id="lbl_carnes">Carnes</span>
+        </div>
     </div>
     
-    <div class="tabs-container">
-        <div class="tabs-nav">
-            <button class="tab-btn active" onclick="setView('list', this)" id="btn_tab_list">📋 Matriz de Equipos</button>
-            <button class="tab-btn" onclick="setView('charts', this)">📊 Análisis Gráfico</button>
-        </div>
-        <button onclick="descargarExcel()" class="btn-action">📊 Exportar Dataset</button>
-    </div>
-    
-    <div class="app-layout">
-        <div class="col-filters">
-            <div class="filters-header"><span>🔍 Parámetros</span></div>
-            <div class="filters-body" id="filters_dynamic"></div>
-            <div class="footer-date">Última actualización:<br>__FECHA_ACTUAL__</div>
-        </div>
-
-        <div id="view_list" style="display:flex; flex:1; overflow:hidden;">
-            <div class="col-list">
-                <div class="list-header">
-                    <input type="text" id="search_input" placeholder="🔍 Buscar equipo o línea..." onkeyup="applyFilters()">
-                </div>
-                <div id="list_container" class="list-scroll-area"></div>
+    <div class="main-container">
+        <div class="sidebar">
+            <div class="filter-header">
+                <span>Filtros Globales</span>
             </div>
-            <div class="col-detail">
-                <div id="empty_state" style="text-align:center; padding-top:100px; color:var(--muted);">
-                    <h1 style="font-size:4rem; margin:0;">⚙️</h1>
-                    <h3>Selecciona un equipo de la lista</h3>
+            <div class="filter-body" id="filters_dynamic">
                 </div>
-                <div id="detail_view" class="detail-card" style="display:none">
-                    <div style="border-bottom: 1px solid var(--border); padding-bottom: 20px; margin-bottom: 20px;">
-                        <span id="d_semana" style="float:right; font-weight:700; color:var(--accent); background:var(--bg); padding:5px 15px; border-radius:20px;"></span>
-                        <h2 id="d_equipo" style="margin:0; font-size:1.8rem; color:var(--primary);"></h2>
-                        <p id="d_planta_linea" style="margin:5px 0 0; color:var(--muted); font-weight:600; text-transform:uppercase;"></p>
-                    </div>
-                    
-                    <div class="metric-grid">
-                        <div class="metric-box" style="border-top: 4px solid var(--success);"><small>Confiabilidad (R)</small><strong id="d_conf" style="color:var(--success);"></strong></div>
-                        <div class="metric-box" style="border-top: 4px solid var(--accent);"><small>Mantenibilidad (M)</small><strong id="d_mant" style="color:var(--accent);"></strong></div>
-                        <div class="metric-box" style="border-top: 4px solid var(--danger);"><small>Prob. de Falla (Pf)</small><strong id="d_prob" style="color:var(--danger);"></strong></div>
-                    </div>
-                    
-                    <div class="metric-grid" style="margin-top:15px;">
-                        <div class="metric-box" style="background:#fff;"><small>Cant. Detenciones (N)</small><strong id="d_det"></strong></div>
-                        <div class="metric-box" style="background:#fff;"><small>Tpo. Perdido (Hrs)</small><strong id="d_tpop"></strong></div>
-                        <div class="metric-box" style="background:#fff;"><small>Tpo. Operativo (Hrs)</small><strong id="d_tpoo"></strong></div>
-                    </div>
-
-                    <div class="metric-grid" style="margin-top:15px; grid-template-columns: 1fr 1fr;">
-                        <div class="metric-box"><small>MTBF (Tpo. Medio Entre Fallas)</small><strong id="d_mtbf"></strong></div>
-                        <div class="metric-box"><small>MTTR (Tpo. Medio Reparación)</small><strong id="d_mttr"></strong></div>
-                    </div>
-                </div>
+            <div style="padding: 20px; border-top: 1px solid var(--border);">
+                <button class="btn-export" onclick="descargarExcel()">⬇️ Exportar Data a Excel</button>
+                <div style="text-align:center; font-size:0.7rem; color:var(--text-muted); margin-top:15px; font-weight:600;">Actualizado: __FECHA_ACTUAL__</div>
             </div>
         </div>
 
-        <div id="view_charts" class="graficos-layout" style="display:none;">
-            <div class="chart-card"><div class="chart-title">Confiabilidad Promedio por Planta (%)</div><div class="canvas-container"><canvas id="chart1"></canvas></div></div>
-            <div class="chart-card"><div class="chart-title">Distribución de Tiempos Perdidos (Hrs)</div><div class="canvas-container"><canvas id="chart2"></canvas></div></div>
-            <div class="chart-card wide"><div class="chart-title">Top 10 Equipos con Mayor Probabilidad de Falla</div><div class="canvas-container"><canvas id="chart3"></canvas></div></div>
+        <div class="content">
+            <div class="kpi-row">
+                <div class="kpi-card">
+                    <span>Equipos Analizados</span>
+                    <h3 id="k_equipos">0</h3>
+                </div>
+                <div class="kpi-card c-green">
+                    <span>Confiabilidad Promedio</span>
+                    <h3 id="k_conf">0%</h3>
+                </div>
+                <div class="kpi-card c-red">
+                    <span>Tpo. Perdido Total (Hrs)</span>
+                    <h3 id="k_hrs">0.0</h3>
+                </div>
+                <div class="kpi-card">
+                    <span>MTBF Global (Hrs)</span>
+                    <h3 id="k_mtbf">0.0</h3>
+                </div>
+            </div>
+
+            <div class="charts-row">
+                <div class="chart-container">
+                    <div class="chart-header">📈 Tendencia de Confiabilidad por Semana</div>
+                    <div class="canvas-wrapper"><canvas id="chart_trend_conf"></canvas></div>
+                </div>
+                <div class="chart-container">
+                    <div class="chart-header">⏱️ Evolución Tiempos Medios (MTBF vs MTTR)</div>
+                    <div class="canvas-wrapper"><canvas id="chart_trend_mtbf"></canvas></div>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <div class="table-header">
+                    <span>📋 Matriz de Equipos y Fallas (Acumulado)</span>
+                    <input type="text" id="search_input" placeholder="🔍 Buscar equipo o línea..." onkeyup="renderTable()">
+                </div>
+                <div class="table-wrapper">
+                    <table id="data_table">
+                        <thead>
+                            <tr>
+                                <th onclick="sortTable(0)">Planta ↕</th>
+                                <th onclick="sortTable(1)">Línea ↕</th>
+                                <th onclick="sortTable(2)">Equipo ↕</th>
+                                <th onclick="sortTable(3)">Fallas ↕</th>
+                                <th onclick="sortTable(4)">Tpo Perdido (Hrs) ↕</th>
+                                <th onclick="sortTable(5)">MTBF ↕</th>
+                                <th onclick="sortTable(6)">MTTR ↕</th>
+                                <th onclick="sortTable(7)">Confiabilidad ↕</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table_body"></tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 
     <script>
     Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
+    Chart.defaults.color = '#64748b';
 
     const db = __DB_JSON_DATA__;
-    const records = Object.values(db).sort((a,b) => b.prob_falla - a.prob_falla);
-    let currentData = [];
+    const records = Object.values(db);
+    
+    let isCarnesTheme = false;
+    let baseData = []; // Datos filtrados por Mundo (Masas/Carnes)
+    let currentData = []; // Datos finales filtrados por los selects
+    let chartInstances = {};
+
+    function toggleTheme() {
+        isCarnesTheme = document.getElementById('theme_toggle').checked;
+        if(isCarnesTheme) {
+            document.body.classList.add('theme-carnes');
+            document.getElementById('lbl_carnes').classList.add('active');
+            document.getElementById('lbl_masas').classList.remove('active');
+        } else {
+            document.body.classList.remove('theme-carnes');
+            document.getElementById('lbl_masas').classList.add('active');
+            document.getElementById('lbl_carnes').classList.remove('active');
+        }
+        
+        // Filtramos la base principal según el mundo seleccionado
+        baseData = records.filter(d => isCarnesTheme ? d.super_planta === 'Carnes' : d.super_planta === 'Masas');
+        
+        buildFilters();
+        applyFilters();
+    }
 
     function buildFilters() {
         const createSelect = (id, label, options) => {
-            let sel = `<div class="f-group"><label>${label}</label><select id="${id}" onchange="applyFilters()"><option value="ALL">Todos</option>`;
+            let sel = `<div class="f-group"><label>${label}</label><select id="${id}" onchange="applyFilters()"><option value="ALL">Todas</option>`;
             options.sort().forEach(o => sel += `<option value="${o}">${o}</option>`);
             return sel + `</select></div>`;
         };
         
         let html = '';
-        html += createSelect('f_semana', '📆 Semana', [...new Set(records.map(x=>x.semana))]);
-        html += createSelect('f_planta', '🏢 Planta', [...new Set(records.map(x=>x.planta))]);
-        html += createSelect('f_linea', '🏭 Línea', [...new Set(records.map(x=>x.linea))]);
+        html += createSelect('f_planta', '🏢 Planta', [...new Set(baseData.map(x=>x.planta))]);
+        html += createSelect('f_linea', '🏭 Línea', [...new Set(baseData.map(x=>x.linea))]);
         document.getElementById('filters_dynamic').innerHTML = html;
-        
-        let semanas = [...new Set(records.map(x=>parseInt(x.semana)))].filter(x => !isNaN(x)).sort((a,b)=>b-a);
-        if(semanas.length > 0) {
-            document.getElementById('f_semana').value = semanas[0].toString();
-        }
     }
 
     function applyFilters() {
-        const fSem = document.getElementById('f_semana').value;
         const fPla = document.getElementById('f_planta').value;
         const fLin = document.getElementById('f_linea').value;
-        const search = document.getElementById('search_input').value.toLowerCase();
 
-        currentData = records.filter(d => {
-            if(fSem !== 'ALL' && d.semana !== fSem) return false;
+        currentData = baseData.filter(d => {
             if(fPla !== 'ALL' && d.planta !== fPla) return false;
             if(fLin !== 'ALL' && d.linea !== fLin) return false;
-            if(search && !`${d.equipo} ${d.linea}`.toLowerCase().includes(search)) return false;
             return true;
         });
 
-        renderList();
-        if(document.getElementById('view_charts').style.display !== 'none') drawCharts();
+        updateKPIs();
+        drawCharts();
+        renderTable();
     }
 
-    function renderList() {
-        const cont = document.getElementById('list_container');
-        cont.innerHTML = '';
-        currentData.forEach(d => {
-            let item = document.createElement('div');
-            item.className = 'list-item';
-            let colorConf = d.confiabilidad >= 80 ? '#10b981' : (d.confiabilidad >= 50 ? '#f59e0b' : '#ef4444');
-            item.innerHTML = `
-                <div class="li-top"><span>${d.planta} | ${d.linea}</span><span>Sem: ${d.semana}</span></div>
-                <div class="li-title">${d.equipo}</div>
-                <div class="li-btm">
-                    <span>Fallas: <b>${d.detenciones}</b></span>
-                    <span class="tag-conf" style="background:${colorConf}15; color:${colorConf}; border: 1px solid ${colorConf}40;">R: ${d.confiabilidad}%</span>
-                </div>
-            `;
-            item.onclick = () => {
-                document.querySelectorAll('.list-item').forEach(i=>i.classList.remove('selected'));
-                item.classList.add('selected');
-                showDetail(d);
-            };
-            cont.appendChild(item);
+    function updateKPIs() {
+        if(currentData.length === 0) {
+            document.getElementById('k_equipos').innerText = "0";
+            document.getElementById('k_conf').innerText = "0%";
+            document.getElementById('k_hrs').innerText = "0.0";
+            document.getElementById('k_mtbf').innerText = "0.0";
+            return;
+        }
+
+        // Para KPIs globales sumamos y promediamos todo el espectro de tiempo filtrado
+        let unqEquipos = new Set(currentData.map(d => d.planta + d.linea + d.equipo)).size;
+        let avgConf = currentData.reduce((s, d) => s + d.confiabilidad, 0) / currentData.length;
+        let sumHrs = currentData.reduce((s, d) => s + d.tpo_perdido_hrs, 0);
+        
+        // MTBF Global ponderado = Tpo Operativo Total / Detenciones Totales
+        let sumOp = currentData.reduce((s, d) => s + d.tpo_operativo_hrs, 0);
+        let sumDet = currentData.reduce((s, d) => s + d.detenciones, 0);
+        let mtbfGlob = sumDet > 0 ? (sumOp / sumDet) : 0;
+
+        document.getElementById('k_equipos').innerText = unqEquipos;
+        document.getElementById('k_conf').innerText = avgConf.toFixed(1) + "%";
+        document.getElementById('k_hrs').innerText = sumHrs.toFixed(1);
+        document.getElementById('k_mtbf').innerText = mtbfGlob.toFixed(1);
+    }
+
+    function drawCharts() {
+        if(currentData.length === 0) return;
+        
+        const accentColor = isCarnesTheme ? '#dc2626' : '#0ea5e9';
+        const secColor = isCarnesTheme ? '#991b1b' : '#334155';
+        
+        // Agrupar por semana cronológicamente
+        let weeks = [...new Set(currentData.map(d => d.semana))].sort((a,b) => a-b);
+        
+        let confTrend = [];
+        let mtbfTrend = [];
+        let mttrTrend = [];
+
+        weeks.forEach(w => {
+            let dw = currentData.filter(d => d.semana === w);
+            let avgC = dw.reduce((s, d) => s + d.confiabilidad, 0) / dw.length;
+            
+            let sOp = dw.reduce((s, d) => s + d.tpo_operativo_hrs, 0);
+            let sPerd = dw.reduce((s, d) => s + d.tpo_perdido_hrs, 0);
+            let sDet = dw.reduce((s, d) => s + d.detenciones, 0);
+            
+            let avgMTBF = sDet > 0 ? (sOp / sDet) : 0;
+            let avgMTTR = sDet > 0 ? (sPerd / sDet) : 0;
+
+            confTrend.push(avgC.toFixed(2));
+            mtbfTrend.push(avgMTBF.toFixed(2));
+            mttrTrend.push(avgMTTR.toFixed(2));
+        });
+
+        // 1. Gráfico Confiabilidad
+        if(chartInstances['trend_conf']) chartInstances['trend_conf'].destroy();
+        chartInstances['trend_conf'] = new Chart(document.getElementById('chart_trend_conf'), {
+            type: 'line',
+            data: {
+                labels: weeks.map(w => 'Semana ' + w),
+                datasets: [{
+                    label: 'Confiabilidad Promedio (%)',
+                    data: confTrend,
+                    borderColor: accentColor,
+                    backgroundColor: accentColor + '20',
+                    borderWidth: 3,
+                    pointRadius: 4,
+                    fill: true,
+                    tension: 0.3
+                }]
+            },
+            options: {
+                maintainAspectRatio: false,
+                scales: { y: { min: 0, max: 100, grid: { borderDash: [4, 4] } }, x: { grid: { display: false } } },
+                plugins: { legend: { display: false } }
+            }
+        });
+
+        // 2. Gráfico MTBF y MTTR
+        if(chartInstances['trend_mtbf']) chartInstances['trend_mtbf'].destroy();
+        chartInstances['trend_mtbf'] = new Chart(document.getElementById('chart_trend_mtbf'), {
+            type: 'line',
+            data: {
+                labels: weeks.map(w => 'Semana ' + w),
+                datasets: [
+                    {
+                        label: 'MTBF (Hrs)',
+                        data: mtbfTrend,
+                        borderColor: secColor,
+                        borderWidth: 3,
+                        tension: 0.3,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'MTTR (Hrs)',
+                        data: mttrTrend,
+                        borderColor: '#f59e0b',
+                        borderWidth: 3,
+                        borderDash: [5, 5],
+                        tension: 0.3,
+                        yAxisID: 'y1'
+                    }
+                ]
+            },
+            options: {
+                maintainAspectRatio: false,
+                scales: {
+                    x: { grid: { display: false } },
+                    y: { type: 'linear', display: true, position: 'left', title: {display:true, text:'MTBF (h)'} },
+                    y1: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false }, title: {display:true, text:'MTTR (h)'} }
+                },
+                plugins: { legend: { position: 'top' } }
+            }
         });
     }
 
-    function showDetail(d) {
-        document.getElementById('empty_state').style.display = 'none';
-        document.getElementById('detail_view').style.display = 'block';
-        
-        document.getElementById('d_equipo').innerText = d.equipo;
-        document.getElementById('d_planta_linea').innerText = `${d.planta} / ${d.linea}`;
-        document.getElementById('d_semana').innerText = `Semana ${d.semana}`;
-        
-        document.getElementById('d_conf').innerText = `${d.confiabilidad}%`;
-        document.getElementById('d_mant').innerText = `${d.mantenibilidad}%`;
-        document.getElementById('d_prob').innerText = `${d.prob_falla}%`;
-        
-        document.getElementById('d_det').innerText = d.detenciones;
-        document.getElementById('d_tpop').innerText = d.tpo_perdido_hrs;
-        document.getElementById('d_tpoo').innerText = d.tpo_operativo_hrs;
-        
-        document.getElementById('d_mtbf').innerText = d.mtbf;
-        document.getElementById('d_mttr').innerText = d.mttr;
+    function renderTable() {
+        const search = document.getElementById('search_input').value.toLowerCase();
+        const tbody = document.getElementById('table_body');
+        tbody.innerHTML = '';
+
+        // Para la tabla, consolidaremos los datos del equipo sumando todas las semanas seleccionadas
+        // Esto da una vista general del equipo en el periodo filtrado
+        let eqMap = {};
+        currentData.forEach(d => {
+            let key = d.planta + "|" + d.linea + "|" + d.equipo;
+            if(!eqMap[key]) {
+                eqMap[key] = { p: d.planta, l: d.linea, e: d.equipo, det: 0, tpop: 0, tpoo: 0 };
+            }
+            eqMap[key].det += d.detenciones;
+            eqMap[key].tpop += d.tpo_perdido_hrs;
+            eqMap[key].tpoo += d.tpo_operativo_hrs;
+        });
+
+        let tableData = Object.values(eqMap).map(d => {
+            let mtbf = d.det > 0 ? (d.tpoo / d.det) : 0;
+            let mttr = d.det > 0 ? (d.tpop / d.det) : 0;
+            let conf = mtbf > 0 ? Math.exp(-120 / mtbf) * 100 : (d.det === 0 ? 100 : 0);
+            return { ...d, mtbf, mttr, conf };
+        });
+
+        // Filtrar por texto
+        if(search) {
+            tableData = tableData.filter(d => `${d.p} ${d.l} ${d.e}`.toLowerCase().includes(search));
+        }
+
+        // Ordenar por defecto por Confiabilidad ascendente (los peores primero)
+        tableData.sort((a,b) => a.conf - b.conf);
+
+        tableData.forEach(d => {
+            let badgeClass = d.conf >= 80 ? 'b-ok' : (d.conf >= 50 ? 'b-warn' : 'b-danger');
+            let tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${d.p}</td>
+                <td>${d.l}</td>
+                <td style="font-weight:700;">${d.e}</td>
+                <td>${d.det}</td>
+                <td>${d.tpop.toFixed(2)}</td>
+                <td>${d.mtbf.toFixed(1)}</td>
+                <td>${d.mttr.toFixed(2)}</td>
+                <td><span class="badge ${badgeClass}">${d.conf.toFixed(1)}%</span></td>
+            `;
+            tbody.appendChild(tr);
+        });
     }
 
-    function setView(view, btn) {
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        document.getElementById('view_list').style.display = view === 'list' ? 'flex' : 'none';
-        document.getElementById('view_charts').style.display = view === 'charts' ? 'grid' : 'none';
-        if(view === 'charts') drawCharts();
+    // Ordenamiento simple de tabla al clickear los headers
+    let sortAsc = true;
+    let lastCol = -1;
+    function sortTable(colIdx) {
+        const table = document.getElementById("data_table");
+        const tbody = table.querySelector("tbody");
+        const rows = Array.from(tbody.querySelectorAll("tr"));
+        
+        sortAsc = (lastCol === colIdx) ? !sortAsc : true;
+        lastCol = colIdx;
+
+        rows.sort((a, b) => {
+            let valA = a.cells[colIdx].innerText.replace('%','').trim();
+            let valB = b.cells[colIdx].innerText.replace('%','').trim();
+            
+            let numA = parseFloat(valA);
+            let numB = parseFloat(valB);
+            
+            if(!isNaN(numA) && !isNaN(numB)) {
+                return sortAsc ? numA - numB : numB - numA;
+            }
+            return sortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+        });
+        
+        tbody.innerHTML = '';
+        rows.forEach(r => tbody.appendChild(r));
     }
 
     function descargarExcel() {
         if(currentData.length === 0) return alert("No hay datos para exportar");
         const ws = XLSX.utils.json_to_sheet(currentData);
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Confiabilidad");
-        XLSX.writeFile(wb, `Reporte_Confiabilidad_Semana_${document.getElementById('f_semana').value}.xlsx`);
-    }
-
-    let chartInstances = {};
-    function drawCharts() {
-        if(currentData.length === 0) return;
-        
-        const opts = { maintainAspectRatio: false, responsive: true, plugins: { legend: { position: 'bottom' } } };
-        
-        const plantas = [...new Set(currentData.map(d=>d.planta))];
-        const confProm = plantas.map(p => {
-            let items = currentData.filter(d=>d.planta === p);
-            return items.length > 0 ? items.reduce((sum, d)=>sum+d.confiabilidad, 0) / items.length : 0;
-        });
-
-        if(chartInstances['chart1']) chartInstances['chart1'].destroy();
-        chartInstances['chart1'] = new Chart(document.getElementById('chart1'), {
-            type: 'bar',
-            data: { labels: plantas, datasets: [{ label: '% Confiabilidad Promedio', data: confProm, backgroundColor: '#0ea5e9', borderRadius: 6 }] },
-            options: { ...opts, scales: { y: { max: 100 } } }
-        });
-
-        const tpoPerdido = plantas.map(p => {
-            let items = currentData.filter(d=>d.planta === p);
-            return items.reduce((sum, d)=>sum+d.tpo_perdido_hrs, 0);
-        });
-
-        if(chartInstances['chart2']) chartInstances['chart2'].destroy();
-        chartInstances['chart2'] = new Chart(document.getElementById('chart2'), {
-            type: 'doughnut',
-            data: { labels: plantas, datasets: [{ data: tpoPerdido, backgroundColor: ['#ef4444', '#f59e0b', '#10b981', '#8b5cf6'], borderWidth: 2 }] },
-            options: opts
-        });
-
-        let topFallas = [...currentData].sort((a,b)=> b.prob_falla - a.prob_falla).slice(0,10);
-        if(chartInstances['chart3']) chartInstances['chart3'].destroy();
-        chartInstances['chart3'] = new Chart(document.getElementById('chart3'), {
-            type: 'bar',
-            data: { 
-                labels: topFallas.map(d=> d.equipo.length > 20 ? d.equipo.substring(0,20)+'...' : d.equipo), 
-                datasets: [{ label: 'Probabilidad de Falla (%)', data: topFallas.map(d=>d.prob_falla), backgroundColor: '#ef4444', borderRadius: 6 }] 
-            },
-            options: { ...opts, indexAxis: 'y', scales: { x: { max: 100 } } }
-        });
+        XLSX.utils.book_append_sheet(wb, ws, "Base_Confiabilidad");
+        XLSX.writeFile(wb, `Dataset_Confiabilidad.xlsx`);
     }
 
     window.onload = () => {
-        buildFilters();
-        applyFilters();
+        // Iniciar en Masas por defecto
+        toggleTheme();
     };
     </script>
 </body></html>"""
