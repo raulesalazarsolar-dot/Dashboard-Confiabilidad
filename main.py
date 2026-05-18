@@ -1,25 +1,19 @@
 import os
-import io
 import json
 import math
+import shutil
 import pandas as pd
+import gdown
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-# Librerías de SharePoint / OneDrive
-from office365.sharepoint.client_context import ClientContext
-from office365.runtime.auth.user_credential import UserCredential
-
 # ==========================================
-# 1. CONFIGURACIÓN (ONEDRIVE + GITHUB)
+# 1. CONFIGURACIÓN (GOOGLE DRIVE)
 # ==========================================
-# Extraído de tu link de OneDrive
-SITE_URL = "https://my.wal-mart.com/personal/n0g07w7_cl_wal-mart_com"
-FOLDER_RELATIVE_URL = "/personal/n0g07w7_cl_wal-mart_com/Documents/Análisis Confiabilidad/Análisis Confiabilidad 2026/Confiabilidad 2026"
+# Aquí está tu link público de la carpeta de Drive
+DRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/1xXeea_F6HTsI-Wfj7HP2KdCnzGtPIUQq?usp=sharing"
 
-USERNAME = os.environ.get("SP_USERNAME", "tu_correo@wal-mart.com")
-PASSWORD = os.environ.get("SP_PASSWORD", "tu_password")
-
+DATA_DIR = "./data"
 OUTPUT_HTML = "index.html"
 
 # PARÁMETROS DEL MODELO
@@ -27,43 +21,47 @@ TIEMPO_MISION_HRS = 120
 TIEMPO_IDEAL_REP_HRS = 1
 
 # ==========================================
-# 2. EXTRACCIÓN Y TRANSFORMACIÓN (ETL)
+# 2. DESCARGA DESDE GOOGLE DRIVE
 # ==========================================
-def obtener_archivos_onedrive(ctx, folder_url):
-    print(f"   📂 Accediendo a la carpeta: {folder_url}")
-    folder = ctx.web.get_folder_by_server_relative_url(folder_url)
-    files = folder.files
-    ctx.load(files)
-    ctx.execute_query()
-    return files
-
-def procesar_datos_confiabilidad():
-    print("🚀 INICIANDO CONEXIÓN A ONEDRIVE...")
+def descargar_desde_drive():
+    print(f"📥 Conectando a Google Drive para descargar Excels...")
+    
+    # Limpiamos la carpeta si existe para asegurar que tenemos la última versión
+    if os.path.exists(DATA_DIR):
+        shutil.rmtree(DATA_DIR)
+    os.makedirs(DATA_DIR, exist_ok=True)
+    
     try:
-        ctx = ClientContext(SITE_URL).with_credentials(UserCredential(USERNAME, PASSWORD))
-        archivos = obtener_archivos_onedrive(ctx, FOLDER_RELATIVE_URL)
-        print(f"   ✅ Se encontraron {len(archivos)} archivos en la carpeta.")
+        # Descarga el contenido de la carpeta pública
+        gdown.download_folder(url=DRIVE_FOLDER_URL, output=DATA_DIR, quiet=False, use_cookies=False)
+        print("✅ Descarga desde Google Drive completada.")
     except Exception as e:
-        print(f"❌ Error al conectar con OneDrive: {e}")
+        print(f"❌ Error al descargar de Drive: {e}")
+
+# ==========================================
+# 3. EXTRACCIÓN Y TRANSFORMACIÓN (ETL)
+# ==========================================
+def procesar_datos_confiabilidad():
+    # Primero descargamos los archivos
+    descargar_desde_drive()
+    
+    print("🚀 INICIANDO PROCESAMIENTO DE EXCEL...")
+    
+    if not os.path.exists(DATA_DIR):
+        print(f"❌ Error: No se encontró la carpeta '{DATA_DIR}'.")
         return {}
+
+    archivos = [f for f in os.listdir(DATA_DIR) if f.endswith('.xlsx') and not f.startswith('~')]
+    print(f"   ✅ Se encontraron {len(archivos)} archivos Excel para procesar.")
 
     datos_equipos = []
     
-    for archivo in archivos:
-        if not archivo.name.endswith('.xlsx') or archivo.name.startswith('~'):
-            continue
-            
-        print(f"   📊 Procesando archivo: {archivo.name}")
+    for archivo_nombre in archivos:
+        ruta_completa = os.path.join(DATA_DIR, archivo_nombre)
+        print(f"   📊 Procesando archivo: {archivo_nombre}")
         
-        # Descargar el archivo en memoria (Byte Stream)
-        file_content = io.BytesIO()
-        archivo.download(file_content)
-        ctx.execute_query()
-        file_content.seek(0)
-        
-        # Leer el Excel con Pandas
         try:
-            excel = pd.ExcelFile(file_content)
+            excel = pd.ExcelFile(ruta_completa)
             hojas = excel.sheet_names
             
             # Buscar las hojas dinámicamente por sufijo
@@ -71,25 +69,23 @@ def procesar_datos_confiabilidad():
             hoja_tpo = next((h for h in hojas if h.endswith('_Tiempos_Planificados')), None)
             
             if not hoja_det or not hoja_tpo:
-                print(f"      ⚠️ No se encontraron las pestañas base en {archivo.name}. Saltando...")
+                print(f"      ⚠️ No se encontraron las pestañas base en {archivo_nombre}. Saltando...")
                 continue
                 
             df_det = pd.read_excel(excel, sheet_name=hoja_det)
             df_tpo = pd.read_excel(excel, sheet_name=hoja_tpo)
             
-            planta_nombre = archivo.name.replace("Confiabilidad ", "").replace(".xlsx", "").strip()
+            planta_nombre = archivo_nombre.replace("Confiabilidad ", "").replace(".xlsx", "").strip()
             
             # ----------------------------------------------------
             # LIMPIEZA Y AGRUPACIÓN - DETENCIONES
             # ----------------------------------------------------
-            # Asegurar nombres de columnas correctos (puede variar ligeramente el texto)
             col_semana = 'N° Semana' if 'N° Semana' in df_det.columns else 'Semana'
             col_tpo_det = 'Tpo detención total [min]' if 'Tpo detención total [min]' in df_det.columns else 'Tiempo Det total [min]'
             
             df_det = df_det.dropna(subset=['Equipo', col_semana, 'Línea'])
             df_det['Hrs_Perdidas'] = df_det[col_tpo_det] / 60.0
             
-            # Agrupar por Línea, Semana, Equipo
             agrup_det = df_det.groupby(['Línea', col_semana, 'Equipo']).agg(
                 detenciones=('Equipo', 'count'),
                 tpo_perdido_hrs=('Hrs_Perdidas', 'sum')
@@ -101,7 +97,6 @@ def procesar_datos_confiabilidad():
             col_sem_tpo = 'N° Semana' if 'N° Semana' in df_tpo.columns else 'Semana'
             
             df_tpo = df_tpo.dropna(subset=['Línea', col_sem_tpo])
-            # Agrupar solo por Línea y Semana para sacar el tiempo operativo de la línea completa
             agrup_tpo = df_tpo.groupby(['Línea', col_sem_tpo]).agg(
                 tpo_operativo_linea_hrs=('Tpo Operativo [hr]', 'sum')
             ).reset_index()
@@ -109,7 +104,6 @@ def procesar_datos_confiabilidad():
             # ----------------------------------------------------
             # MERGE (CRUCE) DE DATOS
             # ----------------------------------------------------
-            # Cruzamos los equipos con el tiempo de su línea respectiva
             df_final = pd.merge(
                 agrup_det, agrup_tpo, 
                 left_on=['Línea', col_semana], 
@@ -117,7 +111,6 @@ def procesar_datos_confiabilidad():
                 how='left'
             )
             
-            # Convertir a diccionario iterativo para aplicar la matemática
             for _, row in df_final.iterrows():
                 datos_equipos.append({
                     "planta": planta_nombre,
@@ -130,7 +123,7 @@ def procesar_datos_confiabilidad():
                 })
                 
         except Exception as e:
-            print(f"      ❌ Error procesando datos en {archivo.name}: {e}")
+            print(f"      ❌ Error procesando {archivo_nombre}: {e}")
 
     # ==========================================
     # CÁLCULO MATEMÁTICO DE CONFIABILIDAD
@@ -177,7 +170,7 @@ def procesar_datos_confiabilidad():
     return db_json
 
 # ==========================================
-# 3. GENERADOR HTML DASHBOARD
+# 4. GENERADOR HTML DASHBOARD
 # ==========================================
 def generar_html_moderno(db_json):
     fecha_actual = datetime.now(ZoneInfo("America/Santiago")).strftime("%d/%m/%Y %H:%M")
@@ -332,7 +325,6 @@ def generar_html_moderno(db_json):
         html += createSelect('f_linea', '🏭 Línea', [...new Set(records.map(x=>x.linea))]);
         document.getElementById('filters_dynamic').innerHTML = html;
         
-        // Default a la semana más reciente si existe
         let semanas = [...new Set(records.map(x=>parseInt(x.semana)))].filter(x => !isNaN(x)).sort((a,b)=>b-a);
         if(semanas.length > 0) {
             document.getElementById('f_semana').value = semanas[0].toString();
@@ -414,7 +406,7 @@ def generar_html_moderno(db_json):
         const ws = XLSX.utils.json_to_sheet(currentData);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Base_Confiabilidad");
-        XLSX.writeFile(wb, `Reporte_Confiabilidad_Semana_${document.getElementById('f_semana').value}.xlsx`);
+        XLSX.writeFile(wb, `Reporte_Confiabilidad.xlsx`);
     }
 
     function drawCharts() {
@@ -422,7 +414,6 @@ def generar_html_moderno(db_json):
         
         const opts = { maintainAspectRatio: false, responsive: true, plugins: { legend: { position: 'bottom' } } };
         
-        // 1. Promedio Confiabilidad por Planta
         const plantas = [...new Set(currentData.map(d=>d.planta))];
         const confProm = plantas.map(p => {
             let items = currentData.filter(d=>d.planta === p);
@@ -436,7 +427,6 @@ def generar_html_moderno(db_json):
             options: { ...opts, scales: { y: { max: 100 } } }
         });
 
-        // 2. Distribución de Tiempos Perdidos por Planta
         const tpoPerdido = plantas.map(p => {
             let items = currentData.filter(d=>d.planta === p);
             return items.reduce((sum, d)=>sum+d.tpo_perdido_hrs, 0);
@@ -449,7 +439,6 @@ def generar_html_moderno(db_json):
             options: opts
         });
 
-        // 3. Top 10 fallas
         let topFallas = [...currentData].sort((a,b)=> b.prob_falla - a.prob_falla).slice(0,10);
         getFreshCanvas('chart3');
         new Chart(document.getElementById('chart3'), {
@@ -486,5 +475,5 @@ def generar_html_moderno(db_json):
 
 if __name__ == "__main__":
     db = procesar_datos_confiabilidad()
-    if db:  # Solo genera el HTML si la DB no está vacía
+    if db:
         generar_html_moderno(db)
