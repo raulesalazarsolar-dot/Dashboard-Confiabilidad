@@ -1,0 +1,40 @@
+name: Actualizar Dashboard Confiabilidad
+
+on:
+  schedule:
+    - cron: '0 10 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Clonar el repositorio
+      uses: actions/checkout@v4
+
+    - name: Configurar Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Instalar dependencias
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Ejecutar ETL y Generar Dashboard
+      env:
+        SP_USERNAME: ${{ secrets.SP_USERNAME }}
+        SP_PASSWORD: ${{ secrets.SP_PASSWORD }}
+      run: python main.py
+
+    - name: Subir el nuevo index.html al repositorio
+      run: |
+        git config --global user.name 'github-actions[bot]'
+        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+        git add index.html
+        git diff --quiet && git diff --staged --quiet || git commit -m "Auto-update: Dashboard de Confiabilidad"
+        git push
