@@ -10,7 +10,6 @@ from zoneinfo import ZoneInfo
 # ==========================================
 # 1. CONFIGURACIÓN (GOOGLE DRIVE)
 # ==========================================
-# Aquí está tu link público de la carpeta de Drive
 DRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/1xXeea_F6HTsI-Wfj7HP2KdCnzGtPIUQq?usp=sharing"
 
 DATA_DIR = "./data"
@@ -26,23 +25,20 @@ TIEMPO_IDEAL_REP_HRS = 1
 def descargar_desde_drive():
     print(f"📥 Conectando a Google Drive para descargar Excels...")
     
-    # Limpiamos la carpeta si existe para asegurar que tenemos la última versión
     if os.path.exists(DATA_DIR):
         shutil.rmtree(DATA_DIR)
     os.makedirs(DATA_DIR, exist_ok=True)
     
     try:
-        # Descarga el contenido de la carpeta pública
         gdown.download_folder(url=DRIVE_FOLDER_URL, output=DATA_DIR, quiet=False, use_cookies=False)
         print("✅ Descarga desde Google Drive completada.")
     except Exception as e:
         print(f"❌ Error al descargar de Drive: {e}")
 
 # ==========================================
-# 3. EXTRACCIÓN Y TRANSFORMACIÓN (ETL)
+# 3. EXTRACCIÓN Y TRANSFORMACIÓN (ETL FLEXIBLE)
 # ==========================================
 def procesar_datos_confiabilidad():
-    # Primero descargamos los archivos
     descargar_desde_drive()
     
     print("🚀 INICIANDO PROCESAMIENTO DE EXCEL...")
@@ -64,52 +60,68 @@ def procesar_datos_confiabilidad():
             excel = pd.ExcelFile(ruta_completa)
             hojas = excel.sheet_names
             
-            # Buscar las hojas dinámicamente por sufijo
             hoja_det = next((h for h in hojas if h.endswith('_Detenciones_FEM')), None)
             hoja_tpo = next((h for h in hojas if h.endswith('_Tiempos_Planificados')), None)
             
             if not hoja_det or not hoja_tpo:
-                print(f"      ⚠️ No se encontraron las pestañas base en {archivo_nombre}. Saltando...")
+                print(f"      ⚠️ Faltan pestañas base en {archivo_nombre}. Saltando...")
                 continue
                 
             df_det = pd.read_excel(excel, sheet_name=hoja_det)
             df_tpo = pd.read_excel(excel, sheet_name=hoja_tpo)
             
+            # Limpiar espacios fantasmas en los nombres de las columnas
+            df_det.columns = df_det.columns.str.strip()
+            df_tpo.columns = df_tpo.columns.str.strip()
+            
             planta_nombre = archivo_nombre.replace("Confiabilidad ", "").replace(".xlsx", "").strip()
             
-            # ----------------------------------------------------
-            # LIMPIEZA Y AGRUPACIÓN - DETENCIONES
-            # ----------------------------------------------------
+            # --- LÓGICA FLEXIBLE PARA DETENCIONES ---
+            col_equipo = 'Componente' if 'Componente' in df_det.columns else 'Equipo'
             col_semana = 'N° Semana' if 'N° Semana' in df_det.columns else 'Semana'
-            col_tpo_det = 'Tpo detención total [min]' if 'Tpo detención total [min]' in df_det.columns else 'Tiempo Det total [min]'
             
-            df_det = df_det.dropna(subset=['Equipo', col_semana, 'Línea'])
-            df_det['Hrs_Perdidas'] = df_det[col_tpo_det] / 60.0
+            # Buscar la columna correcta de tiempo de detención
+            if 'Tpo detención total [min]' in df_det.columns:
+                col_tpo_det = 'Tpo detención total [min]'
+            elif 'Tiempo Det total [min]' in df_det.columns:
+                col_tpo_det = 'Tiempo Det total [min]'
+            elif 'Tiempo detención [min]' in df_det.columns:
+                col_tpo_det = 'Tiempo detención [min]'
+            else:
+                # Si le cambian el nombre otra vez, buscamos la que contenga "detención" o "detencion"
+                col_tpo_det = [c for c in df_det.columns if 'detención' in c.lower() or 'detencion' in c.lower()][0]
             
-            agrup_det = df_det.groupby(['Línea', col_semana, 'Equipo']).agg(
-                detenciones=('Equipo', 'count'),
+            df_det = df_det.dropna(subset=[col_equipo, col_semana, 'Línea'])
+            # Convertir a numérico forzadamente (si hay texto raro lo vuelve 0)
+            df_det['Hrs_Perdidas'] = pd.to_numeric(df_det[col_tpo_det], errors='coerce').fillna(0) / 60.0
+            
+            agrup_det = df_det.groupby(['Línea', col_semana, col_equipo]).agg(
+                detenciones=(col_equipo, 'count'),
                 tpo_perdido_hrs=('Hrs_Perdidas', 'sum')
             ).reset_index()
+            # Estandarizamos el nombre para el cruce
+            agrup_det.rename(columns={col_equipo: 'Equipo'}, inplace=True)
             
-            # ----------------------------------------------------
-            # LIMPIEZA Y AGRUPACIÓN - TIEMPOS PLANIFICADOS (OPERACIONAL)
-            # ----------------------------------------------------
+            # --- LÓGICA FLEXIBLE PARA TIEMPOS PLANIFICADOS ---
             col_sem_tpo = 'N° Semana' if 'N° Semana' in df_tpo.columns else 'Semana'
             
+            # Buscar la columna correcta de tiempo operativo
+            if 'Tpo Operativo [hr]' in df_tpo.columns:
+                col_tpo_op = 'Tpo Operativo [hr]'
+            elif 'Tpo hr real' in df_tpo.columns:
+                col_tpo_op = 'Tpo hr real'
+            else:
+                col_tpo_op = [c for c in df_tpo.columns if 'operativo' in c.lower() or 'real' in c.lower()][0]
+            
             df_tpo = df_tpo.dropna(subset=['Línea', col_sem_tpo])
+            df_tpo['Tpo_Op_Num'] = pd.to_numeric(df_tpo[col_tpo_op], errors='coerce').fillna(0)
+            
             agrup_tpo = df_tpo.groupby(['Línea', col_sem_tpo]).agg(
-                tpo_operativo_linea_hrs=('Tpo Operativo [hr]', 'sum')
+                tpo_operativo_linea_hrs=('Tpo_Op_Num', 'sum')
             ).reset_index()
             
-            # ----------------------------------------------------
-            # MERGE (CRUCE) DE DATOS
-            # ----------------------------------------------------
-            df_final = pd.merge(
-                agrup_det, agrup_tpo, 
-                left_on=['Línea', col_semana], 
-                right_on=['Línea', col_sem_tpo], 
-                how='left'
-            )
+            # --- MERGE (CRUCE) ---
+            df_final = pd.merge(agrup_det, agrup_tpo, left_on=['Línea', col_semana], right_on=['Línea', col_sem_tpo], how='left')
             
             for _, row in df_final.iterrows():
                 datos_equipos.append({
