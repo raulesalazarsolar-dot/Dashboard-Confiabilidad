@@ -1,5 +1,6 @@
 import os
 import json
+import math
 import shutil
 import pandas as pd
 import gdown
@@ -14,30 +15,49 @@ DATA_DIR = "./data"
 OUTPUT_HTML = "index.html"
 
 # ==========================================
-# 2. FUNCIONES DE BÚSQUEDA EXACTA
+# 2. BUSCADORES ESTRICTOS DE COLUMNAS
 # ==========================================
-def buscar_columna(columnas, palabras_clave, excluir=None):
+def buscar_columna_linea(columnas):
     for c in columnas:
-        cl = str(c).lower().replace('ó','o').replace('í','i').strip()
-        if excluir and excluir in cl: continue
-        for palabra in palabras_clave:
-            if palabra in cl: return c
+        if c.strip() == 'Línea': return c
+    for c in columnas:
+        if c.strip().lower() == 'línea': return c
+    for c in columnas:
+        if c.strip().lower() == 'linea': return c
+    return None
+
+def buscar_columna_equipo(columnas):
+    for c in columnas:
+        if c.strip().lower() == 'equipo': return c
+    for c in columnas:
+        if c.strip().lower() == 'componente': return c
+    return None
+
+def buscar_columna_semana(columnas):
+    for c in columnas:
+        if 'n° semana' in c.strip().lower(): return c
+    for c in columnas:
+        if 'semana' in c.strip().lower() and 'aux' not in c.strip().lower(): return c
     return None
 
 def buscar_tiempo_detencion_hr(columnas):
-    # Busca las columnas exactas solicitadas: "Tpo Detenciones [hr]" o similar
     for c in columnas:
-        cl = str(c).lower().replace('ó','o').replace('[hr]]', '[hr]').strip()
-        if 'tpo detencion' in cl and 'hr' in cl: return c
-        if 'tpo detenciones' in cl and 'hr' in cl: return c
+        cl = str(c).lower().strip().replace('  ', ' ')
+        if 'tpo detenciones [hr]' in cl or 'tpo detencion [hr]' in cl or 'tpo detenciones [hr]]' in cl: return c
+    for c in columnas:
+        cl = str(c).lower().strip()
+        if 'detencion' in cl and 'hr' in cl: return c
     return None
 
 def buscar_tiempo_planificado_hr(columnas):
-    # Busca las columnas exactas: "Tpo hr plan" o "Tpo Disponible [total turno hr]"
     for c in columnas:
         cl = str(c).lower().strip().replace('  ', ' ')
         if 'tpo hr plan' in cl: return c
         if 'tpo disponible [total turno hr]' in cl: return c
+    for c in columnas:
+        cl = str(c).lower().strip()
+        if 'plan' in cl and 'hr' in cl: return c
+        if 'disponible' in cl and 'hr' in cl: return c
     return None
 
 # ==========================================
@@ -75,19 +95,19 @@ def procesar_datos_confiabilidad():
             super_planta = "Carnes" if "carne" in planta_nombre.lower() else "Masas"
             
             # --- LIMPIEZA DETENCIONES ---
-            col_equipo = buscar_columna(df_det.columns, ['equipo', 'componente'])
-            col_semana_det = buscar_columna(df_det.columns, ['semana'], excluir='aux')
-            col_linea_det = buscar_columna(df_det.columns, ['linea'])
+            col_equipo = buscar_columna_equipo(df_det.columns)
+            col_semana_det = buscar_columna_semana(df_det.columns)
+            col_linea_det = buscar_columna_linea(df_det.columns)
             col_tpo_det = buscar_tiempo_detencion_hr(df_det.columns)
             
             if not all([col_equipo, col_semana_det, col_linea_det, col_tpo_det]):
-                print(f"   ❌ Faltan columnas en FEM. Revisar nombres.")
+                print(f"   ❌ Faltan columnas en FEM. Eq:{col_equipo}, Sem:{col_semana_det}, Lin:{col_linea_det}, Tpo:{col_tpo_det}")
                 continue
 
             df_det = df_det.dropna(subset=[col_equipo, col_semana_det, col_linea_det])
             df_det['Hrs_Perdidas'] = pd.to_numeric(df_det[col_tpo_det], errors='coerce').fillna(0)
             
-            df_det['Linea_Clean'] = df_det[col_linea_det].astype(str).str.strip().str.upper()
+            df_det['Linea_Clean'] = df_det[col_linea_det].astype(str).str.replace('  ', ' ').str.strip().str.upper()
             df_det['Semana_Clean'] = pd.to_numeric(df_det[col_semana_det], errors='coerce').fillna(-1).astype(int)
             df_det['Equipo_Clean'] = df_det[col_equipo].astype(str).str.strip().str.title()
             
@@ -105,18 +125,18 @@ def procesar_datos_confiabilidad():
             ).reset_index()
             
             # --- LIMPIEZA TIEMPOS PLANIFICADOS ---
-            col_semana_tpo = buscar_columna(df_tpo.columns, ['semana'], excluir='aux')
-            col_linea_tpo = buscar_columna(df_tpo.columns, ['linea'])
+            col_semana_tpo = buscar_columna_semana(df_tpo.columns)
+            col_linea_tpo = buscar_columna_linea(df_tpo.columns)
             col_tpo_plan = buscar_tiempo_planificado_hr(df_tpo.columns)
             
             if not all([col_semana_tpo, col_linea_tpo, col_tpo_plan]):
-                print(f"   ❌ Faltan columnas en Planificados. Revisar nombres.")
+                print(f"   ❌ Faltan columnas en Planificados. Sem:{col_semana_tpo}, Lin:{col_linea_tpo}, Tpo:{col_tpo_plan}")
                 continue
 
             df_tpo = df_tpo.dropna(subset=[col_linea_tpo, col_semana_tpo])
             df_tpo['Hrs_Plan'] = pd.to_numeric(df_tpo[col_tpo_plan], errors='coerce').fillna(0)
             
-            df_tpo['Linea_Clean'] = df_tpo[col_linea_tpo].astype(str).str.strip().str.upper()
+            df_tpo['Linea_Clean'] = df_tpo[col_linea_tpo].astype(str).str.replace('  ', ' ').str.strip().str.upper()
             df_tpo['Semana_Clean'] = pd.to_numeric(df_tpo[col_semana_tpo], errors='coerce').fillna(-1).astype(int)
             df_tpo = df_tpo[df_tpo['Semana_Clean'] > 0]
             
@@ -142,8 +162,6 @@ def procesar_datos_confiabilidad():
                     "semana": int(row['Semana_Clean']),
                     "detenciones": int(row['detenciones']),
                     "tpo_perdido_eq": float(row['tpo_perdido_eq']),
-                    "tpo_plan_linea": float(row.get('tpo_plan_linea', 0)),
-                    "tpo_perdido_linea": float(row.get('tpo_perdido_linea', 0)),
                     "tpo_operativo_linea": float(row.get('tpo_operativo_linea', 0))
                 })
             print(f"   ✅ Procesado. Extraídos {len(df_final)} registros.")
@@ -393,18 +411,16 @@ def generar_html_moderno(datos_brutos):
             return true;
         });
 
-        // 1. Agrupar la matemática en JS acumulando todo el rango de tiempo
+        // Agrupar la matemática en JS acumulando todo el rango de tiempo
         let lineasUnicas = {};
         let eqMap = {};
 
         currentData.forEach(d => {
-            // Guardar Tpo Operativo por Linea y Semana (No duplicar por equipo)
             let lineKey = d.planta + "|" + d.linea + "|" + d.semana;
             if(!lineasUnicas[lineKey]) {
                 lineasUnicas[lineKey] = d.tpo_operativo_linea;
             }
             
-            // Sumar Tpo Perdido y Fallas por Equipo
             let eqKey = d.planta + "|" + d.linea + "|" + d.equipo;
             if(!eqMap[eqKey]) {
                 eqMap[eqKey] = { p: d.planta, l: d.linea, e: d.equipo, det: 0, tpop: 0 };
@@ -413,7 +429,7 @@ def generar_html_moderno(datos_brutos):
             eqMap[eqKey].tpop += d.tpo_perdido_eq;
         });
 
-        // Sumar horas operativas totales de las líneas seleccionadas en el rango
+        // Sumar horas operativas de las líneas seleccionadas en el rango
         let lineOpTime = {};
         let totalOperativoGlobal = 0;
         for(let key in lineasUnicas) {
@@ -423,14 +439,23 @@ def generar_html_moderno(datos_brutos):
             totalOperativoGlobal += lineasUnicas[key];
         }
 
-        // Aplicar Fórmulas Exactas de Confiabilidad por equipo
+        // --- APLICACIÓN EXACTA DE FÓRMULAS DE LA IMAGEN ---
         tableDataFull = Object.values(eqMap).map(d => {
             let opTime = lineOpTime[d.p + "|" + d.l] || 0;
+            
+            // MTBF = tiempo operación de la linea / Cant. Detenciones
             let mtbf = d.det > 0 ? (opTime / d.det) : 0;
+            
+            // MTTR = Tpo. Perdido del equipo / Cant. Detenciones
             let mttr = d.det > 0 ? (d.tpop / d.det) : 0;
             
+            // Confiabilidad = EXP(-120/MTBF)
             let conf = mtbf > 0 ? Math.exp(-120 / mtbf) * 100 : (d.det === 0 ? 100 : 0);
+            
+            // Mantenibilidad = 1 - EXP(-1/MTTR)
             let mant = mttr > 0 ? (1 - Math.exp(-1 / mttr)) * 100 : 100;
+            
+            // Probabilidad de falla = 100% - confiabilidad
             let prob = 100 - conf;
             
             return { ...d, opTime, mtbf, mttr, conf, mant, prob };
@@ -473,7 +498,6 @@ def generar_html_moderno(datos_brutos):
         weeks.forEach(w => {
             let dw = currentData.filter(d => d.semana === w);
             
-            // Extraer tiempos operativos únicos de la semana W
             let lu = {};
             dw.forEach(d => { lu[d.planta+"|"+d.linea] = d.tpo_operativo_linea; });
             let sOp = Object.values(lu).reduce((a,b)=>a+b, 0);
@@ -535,7 +559,7 @@ def generar_html_moderno(datos_brutos):
             tbl = tbl.filter(d => `${d.p} ${d.l} ${d.e}`.toLowerCase().includes(search));
         }
 
-        tbl.sort((a,b) => a.conf - b.conf); // Ordenar por los peores
+        tbl.sort((a,b) => a.conf - b.conf);
 
         tbl.forEach(d => {
             let badgeClass = d.conf >= 80 ? 'b-ok' : (d.conf >= 50 ? 'b-warn' : 'b-danger');
