@@ -2,8 +2,8 @@ name: Actualizar Dashboard Confiabilidad
 
 on:
   schedule:
-    - cron: '0 10 * * *' # Se ejecuta solo todos los días
-  workflow_dispatch: # Activa el botón manual
+    - cron: '0 10 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -25,11 +25,6 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: 📥 Descargar Excels desde Google Drive Público
-      run: |
-        mkdir -p data
-        gdown --folder "https://drive.google.com/drive/folders/1xXeea_F6HTsI-Wfj7HTsI-Wfj7HP2KdCnzGtPIUQq?usp=sharing" -O data/
-
     - name: Ejecutar ETL y Generar Dashboard
       run: python main.py
 
@@ -42,6 +37,6 @@ jobs:
           git diff --quiet && git diff --staged --quiet || git commit -m "Auto-update: Dashboard de Confiabilidad"
           git push
         else
-          echo "⚠️ El archivo index.html no se generó. Revisa los pasos anteriores."
+          echo "⚠️ El archivo index.html no se generó. Revisa el log de Python."
           exit 1
         fi
