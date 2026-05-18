@@ -29,7 +29,13 @@ def buscar_columna_linea(columnas):
         if str(c).strip().lower().replace('í', 'i') == 'linea': return c
     return None
 
-def buscar_columna_equipo(columnas):
+def buscar_columna_equipo(columnas, super_planta):
+    # Truco de Carnes: La máquina está en la columna "Detalle"
+    if super_planta == "Carnes":
+        for c in columnas:
+            if str(c).strip().lower() == 'detalle': return c
+            
+    # Para Masas (o fallback), busca en Equipo o Componente
     for c in columnas:
         if str(c).strip().lower() == 'equipo': return c
     for c in columnas:
@@ -92,7 +98,7 @@ def procesar_datos_confiabilidad():
             super_planta = "Carnes" if "carne" in planta_nombre.lower() else "Masas"
             
             # --- LIMPIEZA DETENCIONES ---
-            col_equipo = buscar_columna_equipo(df_det.columns)
+            col_equipo = buscar_columna_equipo(df_det.columns, super_planta)
             col_semana_det = buscar_columna_semana(df_det.columns)
             col_linea_det = buscar_columna_linea(df_det.columns)
             col_tpo_det = buscar_tiempo_detencion_hr(df_det.columns)
