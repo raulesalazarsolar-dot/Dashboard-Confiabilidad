@@ -24,20 +24,29 @@ def buscar_columna_linea(df):
         if 'linea' in str(c).strip().lower().replace('í', 'i') and 'aux' not in str(c).lower(): return c
     return None
 
-def buscar_columna_equipo(df, super_planta):
-    if super_planta == "Carnes":
+def buscar_columna_equipo(df, planta_nombre):
+    planta_lower = str(planta_nombre).lower()
+    
+    # Caso especial: En Carnes Mercadeo, la máquina real está en 'Detalle'
+    if "mercadeo" in planta_lower:
         for c in df.columns:
             if str(c).strip().lower() == 'detalle': return c
+            
+    # Para el resto (Molida, Panadería, Dely), la máquina está en 'Equipo' o 'Componente'
     for c in df.columns:
         if str(c).strip().lower() == 'equipo': return c
     for c in df.columns:
         if str(c).strip().lower() == 'componente': return c
+        
+    # Fallback de seguridad
+    for c in df.columns:
+        if str(c).strip().lower() == 'detalle': return c
     return None
 
 def buscar_columna_semana(df):
     # Busca todas las candidatas que tengan la palabra semana
     candidatas = [c for c in df.columns if 'semana' in str(c).lower() and 'aux' not in str(c).lower()]
-    # Retorna la primera que realmente contenga datos (Esquiva la columna vacía de Carnes Molida)
+    # Retorna la primera que realmente contenga datos (Esquiva columnas vacías)
     for c in candidatas:
         if not df[c].isnull().all(): return c
     return candidatas[0] if candidatas else None
@@ -91,13 +100,13 @@ def procesar_datos_confiabilidad():
             super_planta = "Carnes" if "carne" in planta_nombre.lower() else "Masas"
             
             # --- LIMPIEZA DETENCIONES ---
-            col_equipo = buscar_columna_equipo(df_det, super_planta)
+            col_equipo = buscar_columna_equipo(df_det, planta_nombre)
             col_semana_det = buscar_columna_semana(df_det)
             col_linea_det = buscar_columna_linea(df_det)
             col_tpo_det = buscar_tiempo_detencion_hr(df_det)
             
             if not all([col_equipo, col_semana_det, col_linea_det, col_tpo_det]):
-                print(f"   ❌ Faltan columnas. Eq:{col_equipo}, Sem:{col_semana_det}, Lin:{col_linea_det}, Tpo:{col_tpo_det}")
+                print(f"   ❌ Faltan columnas en FEM. Eq:{col_equipo}, Sem:{col_semana_det}, Lin:{col_linea_det}, Tpo:{col_tpo_det}")
                 continue
 
             df_det = df_det.dropna(subset=[col_equipo, col_semana_det, col_linea_det])
@@ -126,7 +135,7 @@ def procesar_datos_confiabilidad():
             col_tpo_plan = buscar_tiempo_planificado_hr(df_tpo)
             
             if not all([col_semana_tpo, col_linea_tpo, col_tpo_plan]):
-                print(f"   ❌ Faltan columnas. Sem:{col_semana_tpo}, Lin:{col_linea_tpo}, Tpo:{col_tpo_plan}")
+                print(f"   ❌ Faltan columnas en Tiempos. Sem:{col_semana_tpo}, Lin:{col_linea_tpo}, Tpo:{col_tpo_plan}")
                 continue
 
             df_tpo = df_tpo.dropna(subset=[col_linea_tpo, col_semana_tpo])
@@ -371,3 +380,266 @@ def generar_html_moderno(db_json):
             document.body.classList.add('theme-carnes');
             document.getElementById('lbl_carnes').classList.add('active');
             document.getElementById('lbl_masas').classList.remove('active');
+        } else {
+            document.body.classList.remove('theme-carnes');
+            document.getElementById('lbl_masas').classList.add('active');
+            document.getElementById('lbl_carnes').classList.remove('active');
+        }
+        
+        buildFilters();
+        applyFilters();
+    }
+
+    function buildFilters() {
+        let baseLn = recordsLn.filter(d => isCarnesTheme ? d.super_planta === 'Carnes' : d.super_planta === 'Masas');
+        
+        let semanasUnicas = [...new Set(baseLn.map(x=>x.semana))].sort((a,b)=>a-b);
+        let htmlDesde = '';
+        let htmlHasta = '';
+        semanasUnicas.forEach((s, idx) => {
+            htmlDesde += `<option value="${s}" ${idx===0 ? 'selected' : ''}>Sem ${s}</option>`;
+            htmlHasta += `<option value="${s}" ${idx===semanasUnicas.length-1 ? 'selected' : ''}>Sem ${s}</option>`;
+        });
+        document.getElementById('f_sem_desde').innerHTML = htmlDesde;
+        document.getElementById('f_sem_hasta').innerHTML = htmlHasta;
+
+        const createSelect = (id, label, options) => {
+            let sel = `<div class="f-group"><label>${label}</label><select id="${id}" onchange="applyFilters()"><option value="ALL">Todas</option>`;
+            options.sort().forEach(o => sel += `<option value="${o}">${o}</option>`);
+            return sel + `</select></div>`;
+        };
+        
+        let htmlDyn = '';
+        htmlDyn += createSelect('f_planta', '🏢 Planta', [...new Set(baseLn.map(x=>x.planta))]);
+        htmlDyn += createSelect('f_linea', '🏭 Línea', [...new Set(baseLn.map(x=>x.linea))]);
+        document.getElementById('filters_dynamic').innerHTML = htmlDyn;
+    }
+
+    function applyFilters() {
+        const sDesde = parseInt(document.getElementById('f_sem_desde').value);
+        const sHasta = parseInt(document.getElementById('f_sem_hasta').value);
+        const fPla = document.getElementById('f_planta').value;
+        const fLin = document.getElementById('f_linea').value;
+
+        currentLnData = recordsLn.filter(d => {
+            if(isCarnesTheme ? d.super_planta !== 'Carnes' : d.super_planta !== 'Masas') return false;
+            if(d.semana < sDesde || d.semana > sHasta) return false;
+            if(fPla !== 'ALL' && d.planta !== fPla) return false;
+            if(fLin !== 'ALL' && d.linea !== fLin) return false;
+            return true;
+        });
+
+        currentEqData = recordsEq.filter(d => {
+            if(isCarnesTheme ? d.super_planta !== 'Carnes' : d.super_planta !== 'Masas') return false;
+            if(d.semana < sDesde || d.semana > sHasta) return false;
+            if(fPla !== 'ALL' && d.planta !== fPla) return false;
+            if(fLin !== 'ALL' && d.linea !== fLin) return false;
+            return true;
+        });
+
+        // 1. Acumular Tiempo Operativo por Linea
+        let opTimeByLine = {};
+        let totalOperativoGlobal = 0;
+        currentLnData.forEach(d => {
+            let k = d.planta + "|" + d.linea;
+            opTimeByLine[k] = (opTimeByLine[k] || 0) + d.tpo_operativo_linea;
+            totalOperativoGlobal += d.tpo_operativo_linea;
+        });
+
+        // 2. Acumular Detenciones y Tiempo Perdido por Equipo
+        let eqMap = {};
+        currentEqData.forEach(d => {
+            let eqKey = d.planta + "|" + d.linea + "|" + d.equipo;
+            if(!eqMap[eqKey]) {
+                eqMap[eqKey] = { p: d.planta, l: d.linea, e: d.equipo, det: 0, tpop: 0 };
+            }
+            eqMap[eqKey].det += d.detenciones;
+            eqMap[eqKey].tpop += d.tpo_perdido_eq;
+        });
+
+        // --- APLICACIÓN EXACTA DE FÓRMULAS DE LA IMAGEN ---
+        tableDataFull = Object.values(eqMap).map(d => {
+            let opTime = opTimeByLine[d.p + "|" + d.l] || 0;
+            
+            // MTBF = Tiempo Operativo Linea / Detenciones
+            let mtbf = d.det > 0 ? (opTime / d.det) : 0;
+            
+            // MTTR = Tiempo Perdido Equipo / Detenciones
+            let mttr = d.det > 0 ? (d.tpop / d.det) : 0;
+            
+            // Confiabilidad y Mantenibilidad Exponencial
+            let conf = mtbf > 0 ? Math.exp(-120 / mtbf) * 100 : (d.det === 0 ? 100 : 0);
+            let mant = mttr > 0 ? (1 - Math.exp(-1 / mttr)) * 100 : 100;
+            let prob = 100 - conf;
+            
+            return { ...d, opTime, mtbf, mttr, conf, mant, prob };
+        });
+
+        // Calcular KPIs Globales
+        let eqCount = tableDataFull.length;
+        let sumPerdidoGlobal = tableDataFull.reduce((s, d) => s + d.tpop, 0);
+        let sumFallasGlobal = tableDataFull.reduce((s, d) => s + d.det, 0);
+        
+        let mtbfGlobal = sumFallasGlobal > 0 ? (totalOperativoGlobal / sumFallasGlobal) : 0;
+        let mttrGlobal = sumFallasGlobal > 0 ? (sumPerdidoGlobal / sumFallasGlobal) : 0;
+        
+        let confGlobal = mtbfGlobal > 0 ? Math.exp(-120 / mtbfGlobal) * 100 : (sumFallasGlobal === 0 ? 100 : 0);
+        let mantGlobal = mttrGlobal > 0 ? (1 - Math.exp(-1 / mttrGlobal)) * 100 : 100;
+
+        document.getElementById('k_equipos').innerText = eqCount;
+        document.getElementById('k_conf').innerText = confGlobal.toFixed(1) + "%";
+        document.getElementById('k_hrs').innerText = sumPerdidoGlobal.toFixed(1);
+        document.getElementById('k_mant').innerText = mantGlobal.toFixed(1) + "%";
+
+        drawCharts(sDesde, sHasta);
+        renderTable();
+    }
+
+    function drawCharts(sDesde, sHasta) {
+        if(currentLnData.length === 0) return;
+        
+        const accentColor = isCarnesTheme ? '#dc2626' : '#0ea5e9';
+        const secColor = isCarnesTheme ? '#991b1b' : '#334155';
+        
+        let weeks = [];
+        for(let i=sDesde; i<=sHasta; i++) weeks.push(i);
+        
+        let confTrend = [];
+        let probTrend = [];
+        let mtbfTrend = [];
+        let mttrTrend = [];
+
+        weeks.forEach(w => {
+            let dLn = currentLnData.filter(d => d.semana === w);
+            let dEq = currentEqData.filter(d => d.semana === w);
+            
+            let sOp = dLn.reduce((s, d) => s + d.tpo_operativo_linea, 0);
+            let sPerd = dEq.reduce((s, d) => s + d.tpo_perdido_eq, 0);
+            let sDet = dEq.reduce((s, d) => s + d.detenciones, 0);
+            
+            let wMtbf = sDet > 0 ? (sOp / sDet) : (sOp > 0 ? sOp : 0);
+            let wMttr = sDet > 0 ? (sPerd / sDet) : 0;
+            let wConf = sDet > 0 ? Math.exp(-120 / wMtbf) * 100 : (sOp > 0 ? 100 : 0);
+            
+            confTrend.push(wConf.toFixed(2));
+            probTrend.push((sOp > 0 ? 100-wConf : 0).toFixed(2));
+            mtbfTrend.push(wMtbf.toFixed(2));
+            mttrTrend.push(wMttr.toFixed(2));
+        });
+
+        if(chartInstances['trend_conf']) chartInstances['trend_conf'].destroy();
+        chartInstances['trend_conf'] = new Chart(document.getElementById('chart_trend_conf'), {
+            type: 'line',
+            data: {
+                labels: weeks.map(w => 'Semana ' + w),
+                datasets: [
+                    { label: 'Confiabilidad (%)', data: confTrend, borderColor: accentColor, backgroundColor: accentColor + '20', borderWidth: 3, fill: true, tension: 0.3 },
+                    { label: 'Prob. Falla (%)', data: probTrend, borderColor: '#ef4444', borderDash: [5, 5], borderWidth: 2, tension: 0.3 }
+                ]
+            },
+            options: { maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } }
+        });
+
+        if(chartInstances['trend_mtbf']) chartInstances['trend_mtbf'].destroy();
+        chartInstances['trend_mtbf'] = new Chart(document.getElementById('chart_trend_mtbf'), {
+            type: 'line',
+            data: {
+                labels: weeks.map(w => 'Semana ' + w),
+                datasets: [
+                    { label: 'MTBF (Hrs)', data: mtbfTrend, borderColor: secColor, borderWidth: 3, tension: 0.3, yAxisID: 'y' },
+                    { label: 'MTTR (Hrs)', data: mttrTrend, borderColor: '#f59e0b', borderWidth: 3, borderDash: [5, 5], tension: 0.3, yAxisID: 'y1' }
+                ]
+            },
+            options: {
+                maintainAspectRatio: false,
+                scales: {
+                    y: { type: 'linear', position: 'left', title: {display:true, text:'MTBF (h)'} },
+                    y1: { type: 'linear', position: 'right', grid: { drawOnChartArea: false }, title: {display:true, text:'MTTR (h)'} }
+                }
+            }
+        });
+    }
+
+    function renderTable() {
+        const search = document.getElementById('search_input').value.toLowerCase();
+        const tbody = document.getElementById('table_body');
+        tbody.innerHTML = '';
+
+        let tbl = [...tableDataFull];
+
+        if(search) {
+            tbl = tbl.filter(d => `${d.p} ${d.l} ${d.e}`.toLowerCase().includes(search));
+        }
+
+        tbl.sort((a,b) => a.conf - b.conf); // Los peores equipos primero
+
+        tbl.forEach(d => {
+            let badgeClass = d.conf >= 80 ? 'b-ok' : (d.conf >= 50 ? 'b-warn' : 'b-danger');
+            let tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${d.p}</td>
+                <td>${d.l}</td>
+                <td style="font-weight:700;">${d.e}</td>
+                <td>${d.det}</td>
+                <td>${d.tpop.toFixed(2)}</td>
+                <td>${d.mtbf.toFixed(1)}</td>
+                <td>${d.mttr.toFixed(2)}</td>
+                <td><span class="badge ${badgeClass}">${d.conf.toFixed(1)}%</span></td>
+                <td>${d.mant.toFixed(1)}%</td>
+                <td>${d.prob.toFixed(1)}%</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    let sortAsc = true;
+    let lastCol = -1;
+    function sortTable(colIdx) {
+        const table = document.getElementById("data_table");
+        const tbody = table.querySelector("tbody");
+        const rows = Array.from(tbody.querySelectorAll("tr"));
+        
+        sortAsc = (lastCol === colIdx) ? !sortAsc : true;
+        lastCol = colIdx;
+
+        rows.sort((a, b) => {
+            let valA = a.cells[colIdx].innerText.replace('%','').trim();
+            let valB = b.cells[colIdx].innerText.replace('%','').trim();
+            let numA = parseFloat(valA);
+            let numB = parseFloat(valB);
+            
+            if(!isNaN(numA) && !isNaN(numB)) return sortAsc ? numA - numB : numB - numA;
+            return sortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+        });
+        
+        tbody.innerHTML = '';
+        rows.forEach(r => tbody.appendChild(r));
+    }
+
+    function descargarExcel() {
+        if(tableDataFull.length === 0) return alert("No hay datos para exportar");
+        const exportData = tableDataFull.map(d => ({
+            "Planta": d.p, "Línea": d.l, "Equipo": d.e,
+            "Cant. Detenciones": d.det, "Tpo Perdido (Hrs)": d.tpop,
+            "MTBF": d.mtbf, "MTTR": d.mttr, 
+            "Confiabilidad (%)": d.conf, "Mantenibilidad (%)": d.mant, "Prob Falla (%)": d.prob
+        }));
+        const ws = XLSX.utils.json_to_sheet(exportData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Base_Acumulada");
+        XLSX.writeFile(wb, `Matriz_Confiabilidad_Acumulada.xlsx`);
+    }
+
+    window.onload = () => toggleTheme();
+    </script>
+</body></html>"""
+
+    full_html = html_template.replace("__DB_JSON_DATA__", json.dumps(db_json))
+    full_html = full_html.replace("__FECHA_ACTUAL__", fecha_actual)
+    
+    with open(OUTPUT_HTML, "w", encoding="utf-8") as f: 
+        f.write(full_html)
+
+if __name__ == "__main__":
+    db = procesar_datos_confiabilidad()
+    if db: generar_html_moderno(db)
