@@ -50,7 +50,7 @@ def procesar_datos_confiabilidad():
     datos_equipos = []
     
     for archivo in archivos:
-        if no archivo.name.endswith('.xlsx') or archivo.name.startswith('~'):
+        if not archivo.name.endswith('.xlsx') or archivo.name.startswith('~'):
             continue
             
         print(f"   📊 Procesando archivo: {archivo.name}")
