@@ -93,6 +93,7 @@ def procesar_datos_confiabilidad():
             # --- LIMPIEZA DETENCIONES ---
             col_equipo = buscar_columna(df_det.columns, ['equipo', 'componente'])
             col_semana_det = buscar_columna(df_det.columns, ['semana'], excluir='aux')
+            col_mes_det = buscar_columna(df_det.columns, ['mes', 'month'], excluir='aux')
             col_linea_det = buscar_columna(df_det.columns, ['linea'])
             col_tpo_det, is_det_min = buscar_tiempo_detencion(df_det.columns)
             
@@ -107,9 +108,16 @@ def procesar_datos_confiabilidad():
             df_det['Semana_Clean'] = df_det[col_semana_det].astype(str).str.strip()
             df_det['Equipo_Clean'] = df_det[col_equipo].astype(str).str.strip()
             
+            if col_mes_det:
+                df_det['Mes_Clean'] = pd.to_numeric(df_det[col_mes_det], errors='coerce').fillna(0).astype(int).astype(str)
+                df_det.loc[df_det['Mes_Clean'] == '0', 'Mes_Clean'] = 'N/A'
+            else:
+                df_det['Mes_Clean'] = 'N/A'
+            
             agrup_det = df_det.groupby(['Linea_Clean', 'Semana_Clean', 'Equipo_Clean']).agg(
                 detenciones=('Equipo_Clean', 'count'),
-                tpo_perdido_hrs=('Hrs_Perdidas', 'sum')
+                tpo_perdido_hrs=('Hrs_Perdidas', 'sum'),
+                Mes_Clean=('Mes_Clean', 'first')
             ).reset_index()
             
             # --- LIMPIEZA TIEMPOS PLANIFICADOS ---
@@ -141,6 +149,7 @@ def procesar_datos_confiabilidad():
                     "linea": str(row['Linea_Clean']),
                     "equipo": str(row['Equipo_Clean']),
                     "semana": str(row['Semana_Clean']),
+                    "mes": str(row.get('Mes_Clean', 'N/A')),
                     "detenciones": int(row['detenciones']),
                     "tpo_perdido_hrs": float(row['tpo_perdido_hrs']),
                     "tpo_operativo_linea_hrs": float(row['tpo_operativo_linea_hrs']) if pd.notna(row['tpo_operativo_linea_hrs']) else 0.0
@@ -181,6 +190,7 @@ def procesar_datos_confiabilidad():
             "linea": row['linea'],
             "equipo": row['equipo'].title(),
             "semana": int(float(row['semana'])) if row['semana'].replace('.','').isdigit() else row['semana'],
+            "mes": int(float(row['mes'])) if row['mes'].replace('.','').isdigit() else row['mes'],
             "detenciones": det,
             "tpo_perdido_hrs": round(tpo_perd, 2),
             "tpo_operativo_hrs": round(tpo_op, 2),
@@ -200,7 +210,7 @@ def procesar_datos_confiabilidad():
 def generar_html_moderno(db_json):
     fecha_actual = datetime.now(ZoneInfo("America/Santiago")).strftime("%d/%m/%Y %H:%M")
     
-    html_template = """<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Confiabilidad Walmart</title>
+    html_template = """<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Dashboard Confiabilidad</title>
     <link rel="icon" type="image/x-icon" href="https://www.walmart.com/favicon.ico">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -295,7 +305,7 @@ def generar_html_moderno(db_json):
     <div class="top-bar">
         <div class="brand">
             <img src="https://upload.wikimedia.org/wikipedia/commons/b/b1/Walmart_logo_%282008%29.svg" alt="Walmart" style="height: 30px; filter: brightness(0) invert(1);">
-            <h2>Confiabilidad de Activos <span>Dashboard Gerencial</span></h2>
+            <h2>Dashboard Confiabilidad <span>Subgerencia de mantenimiento 2026</span></h2>
         </div>
         <div class="planta-switch">
             <span id="lbl_masas" class="active">Masas</span>
@@ -401,33 +411,42 @@ def generar_html_moderno(db_json):
             document.getElementById('lbl_carnes').classList.remove('active');
         }
         
-        // Filtramos la base principal según el mundo seleccionado
         baseData = records.filter(d => isCarnesTheme ? d.super_planta === 'Carnes' : d.super_planta === 'Masas');
-        
         buildFilters();
         applyFilters();
     }
 
     function buildFilters() {
         const createSelect = (id, label, options) => {
-            let sel = `<div class="f-group"><label>${label}</label><select id="${id}" onchange="applyFilters()"><option value="ALL">Todas</option>`;
-            options.sort().forEach(o => sel += `<option value="${o}">${o}</option>`);
+            let sel = `<div class="f-group"><label>${label}</label><select id="${id}" onchange="applyFilters()"><option value="ALL">Todos(as)</option>`;
+            options.sort((a,b) => a-b).forEach(o => { 
+                if(o !== 'N/A' && o != null) sel += `<option value="${o}">${o}</option>`;
+            });
             return sel + `</select></div>`;
         };
         
         let html = '';
+        html += createSelect('f_mes', '📅 Mes', [...new Set(baseData.map(x=>x.mes))]);
+        html += createSelect('f_semana', '📆 Semana', [...new Set(baseData.map(x=>x.semana))]);
         html += createSelect('f_planta', '🏢 Planta', [...new Set(baseData.map(x=>x.planta))]);
         html += createSelect('f_linea', '🏭 Línea', [...new Set(baseData.map(x=>x.linea))]);
+        
         document.getElementById('filters_dynamic').innerHTML = html;
     }
 
     function applyFilters() {
+        const fMes = document.getElementById('f_mes').value;
+        const fSem = document.getElementById('f_semana').value;
         const fPla = document.getElementById('f_planta').value;
         const fLin = document.getElementById('f_linea').value;
+        const search = document.getElementById('search_input').value.toLowerCase();
 
         currentData = baseData.filter(d => {
+            if(fMes !== 'ALL' && String(d.mes) !== fMes) return false;
+            if(fSem !== 'ALL' && String(d.semana) !== fSem) return false;
             if(fPla !== 'ALL' && d.planta !== fPla) return false;
             if(fLin !== 'ALL' && d.linea !== fLin) return false;
+            if(search && !`${d.equipo} ${d.linea}`.toLowerCase().includes(search)) return false;
             return true;
         });
 
@@ -445,12 +464,10 @@ def generar_html_moderno(db_json):
             return;
         }
 
-        // Para KPIs globales sumamos y promediamos todo el espectro de tiempo filtrado
         let unqEquipos = new Set(currentData.map(d => d.planta + d.linea + d.equipo)).size;
         let avgConf = currentData.reduce((s, d) => s + d.confiabilidad, 0) / currentData.length;
         let sumHrs = currentData.reduce((s, d) => s + d.tpo_perdido_hrs, 0);
         
-        // MTBF Global ponderado = Tpo Operativo Total / Detenciones Totales
         let sumOp = currentData.reduce((s, d) => s + d.tpo_operativo_hrs, 0);
         let sumDet = currentData.reduce((s, d) => s + d.detenciones, 0);
         let mtbfGlob = sumDet > 0 ? (sumOp / sumDet) : 0;
@@ -467,15 +484,14 @@ def generar_html_moderno(db_json):
         const accentColor = isCarnesTheme ? '#dc2626' : '#0ea5e9';
         const secColor = isCarnesTheme ? '#991b1b' : '#334155';
         
-        // Agrupar por semana cronológicamente
-        let weeks = [...new Set(currentData.map(d => d.semana))].sort((a,b) => a-b);
+        let weeks = [...new Set(currentData.map(d => parseInt(d.semana) || d.semana))].sort((a,b) => a-b);
         
         let confTrend = [];
         let mtbfTrend = [];
         let mttrTrend = [];
 
         weeks.forEach(w => {
-            let dw = currentData.filter(d => d.semana === w);
+            let dw = currentData.filter(d => d.semana == w);
             let avgC = dw.reduce((s, d) => s + d.confiabilidad, 0) / dw.length;
             
             let sOp = dw.reduce((s, d) => s + d.tpo_operativo_hrs, 0);
@@ -557,8 +573,6 @@ def generar_html_moderno(db_json):
         const tbody = document.getElementById('table_body');
         tbody.innerHTML = '';
 
-        // Para la tabla, consolidaremos los datos del equipo sumando todas las semanas seleccionadas
-        // Esto da una vista general del equipo en el periodo filtrado
         let eqMap = {};
         currentData.forEach(d => {
             let key = d.planta + "|" + d.linea + "|" + d.equipo;
@@ -577,12 +591,10 @@ def generar_html_moderno(db_json):
             return { ...d, mtbf, mttr, conf };
         });
 
-        // Filtrar por texto
         if(search) {
             tableData = tableData.filter(d => `${d.p} ${d.l} ${d.e}`.toLowerCase().includes(search));
         }
 
-        // Ordenar por defecto por Confiabilidad ascendente (los peores primero)
         tableData.sort((a,b) => a.conf - b.conf);
 
         tableData.forEach(d => {
@@ -602,7 +614,6 @@ def generar_html_moderno(db_json):
         });
     }
 
-    // Ordenamiento simple de tabla al clickear los headers
     let sortAsc = true;
     let lastCol = -1;
     function sortTable(colIdx) {
@@ -639,7 +650,6 @@ def generar_html_moderno(db_json):
     }
 
     window.onload = () => {
-        // Iniciar en Masas por defecto
         toggleTheme();
     };
     </script>
