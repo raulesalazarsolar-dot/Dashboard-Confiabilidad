@@ -416,7 +416,7 @@ body.theme-carnes .tab-btn.active { color: #dc2626; border-bottom-color: #dc2626
 .eq-rank-row { display: grid; grid-template-columns: 22px 1fr 88px 88px; gap: 7px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); }
 .eq-rank-num { width: 20px; height: 20px; border-radius: 50%; font-size: 8px; font-weight: 800; color: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .rn1{background:#CC2222;}.rn2{background:#E65100;}.rn3{background:#F9A825;color:#333;}.rn4{background:#5D6D7E;}.rn5{background:#95A5A6;}
-.eq-rank-name { font-size: 10px; font-weight: 700; color: var(--secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.eq-rank-name { font-size: 10px; font-weight: 700; color: var(--secondary); white-space: nowrap; padding-right: 15px; }
 .eq-rank-badge { font-size: 7px; padding: 1px 5px; border-radius: 3px; font-weight: 800; background: var(--accent); color: #fff; display: inline-block; margin-left: 4px; vertical-align: middle; }
 body.theme-carnes .eq-rank-badge { background: #dc2626; }
 .eq-rank-kpi { text-align: center; background: #f8fafc; border-radius: 5px; padding: 4px 3px; }
