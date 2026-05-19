@@ -42,7 +42,14 @@ def buscar_columna_semana(df):
                 return c
     return None
 
-def buscar_tiempo_detencion_hr(df):
+def buscar_tiempo_detencion_hr(df, super_planta):
+    # Reglas explícitas según imagen
+    for c in df.columns:
+        cl = str(c).lower()
+        if super_planta == 'Carnes' and 'tpo detenciones' in cl and 'hr' in cl:
+            return c
+    
+    # Buscador general (fallback)
     for c in df.columns:
         if 'detencion' in str(c).lower() and 'hr' in str(c).lower():
             return c
@@ -64,7 +71,16 @@ def limpiar_semana(serie):
         resultado[mask_nan] = pd.to_numeric(extraidos, errors='coerce')
     return resultado.fillna(-1).astype(int)
 
-def buscar_columna_tiempo_plan(df):
+def buscar_columna_tiempo_plan(df, super_planta):
+    # Reglas explícitas según la imagen
+    for c in df.columns:
+        cl = str(c).lower().strip()
+        if super_planta == 'Carnes' and 'tpo hr plan' in cl:
+            return c
+        if super_planta == 'Masas' and 'tpo disponible' in cl and 'hr' in cl:
+            return c
+            
+    # Buscador general (fallback)
     cols_lower = [str(c).lower().replace(' ', ' ').strip() for c in df.columns]
     for i, c in enumerate(cols_lower):
         if (' plan' in c or 'disponible' in c) and 'hr' in c:
@@ -129,7 +145,7 @@ def procesar_datos_confiabilidad():
 
     # --- LECTURA DE LOS EXCEL DE CONFIABILIDAD ---
     for archivo_nombre in archivos:
-        if 'acciones' in archivo_nombre.lower(): continue # Saltar el de acciones
+        if 'acciones' in archivo_nombre.lower(): continue
 
         ruta_completa = os.path.join(DATA_DIR, archivo_nombre)
         print(f"\n🔍 Analizando: {archivo_nombre}")
@@ -152,7 +168,9 @@ def procesar_datos_confiabilidad():
             col_equipo      = buscar_columna_equipo(df_det, planta_nombre)
             col_semana_det  = buscar_columna_semana(df_det)
             col_linea_det   = buscar_columna_linea(df_det)
-            col_tpo_det     = buscar_tiempo_detencion_hr(df_det)
+            
+            # Buscador ajustado para CARNES
+            col_tpo_det     = buscar_tiempo_detencion_hr(df_det, super_planta)
 
             if not all([col_equipo, col_semana_det, col_linea_det, col_tpo_det]):
                 print("  ❌ Faltan columnas vitales en FEM. Saltando...")
@@ -175,7 +193,9 @@ def procesar_datos_confiabilidad():
             col_semana_tpo  = buscar_columna_semana(df_tpo)
             col_linea_tpo   = buscar_columna_linea(df_tpo)
             col_tpo_oper    = buscar_columna_tiempo_oper(df_tpo)
-            col_tpo_plan    = buscar_columna_tiempo_plan(df_tpo)
+            
+            # Buscador ajustado para CARNES y MASAS
+            col_tpo_plan    = buscar_columna_tiempo_plan(df_tpo, super_planta)
 
             if not all([col_semana_tpo, col_linea_tpo]) or (not col_tpo_oper and not col_tpo_plan):
                 print(f"  ❌ Faltan columnas de tiempo en {archivo_nombre}. Saltando...")
@@ -201,6 +221,7 @@ def procesar_datos_confiabilidad():
             linea_merged['tpo_operativo_linea'] = linea_merged.get('tpo_operativo_linea', pd.Series([0] * len(linea_merged))).fillna(0)
             linea_merged['tpo_plan_linea']      = linea_merged.get('tpo_plan_linea',      pd.Series([0] * len(linea_merged))).fillna(0)
 
+            # 🔧 RECONCILIACIÓN DE TIEMPOS
             tipo_tiempo = 'operativo' if col_tpo_oper else 'plan'
 
             for idx, row in linea_merged.iterrows():
@@ -208,14 +229,18 @@ def procesar_datos_confiabilidad():
                 oper    = row['tpo_operativo_linea']
                 perdido = row['tpo_perdido_linea']
 
-                if tipo_tiempo == 'operativo':
-                    if oper == 0 and plan > 0:
-                        linea_merged.at[idx, 'tpo_operativo_linea'] = plan
+                # REGLA EXCLUSIVA PARA CARNES SOLICITADA EN LA IMAGEN
+                if super_planta == 'Carnes':
+                    linea_merged.at[idx, 'tpo_operativo_linea'] = max(0, plan - perdido)
                 else:
-                    if oper == 0 and plan > 0:
-                        linea_merged.at[idx, 'tpo_operativo_linea'] = max(0, plan - perdido)
-                    elif plan == 0 and oper > 0:
-                        linea_merged.at[idx, 'tpo_plan_linea'] = oper + perdido
+                    if tipo_tiempo == 'operativo':
+                        if oper == 0 and plan > 0:
+                            linea_merged.at[idx, 'tpo_operativo_linea'] = plan
+                    else:
+                        if oper == 0 and plan > 0:
+                            linea_merged.at[idx, 'tpo_operativo_linea'] = max(0, plan - perdido)
+                        elif plan == 0 and oper > 0:
+                            linea_merged.at[idx, 'tpo_plan_linea'] = oper + perdido
 
             tiempos_lineas_madre = {}
             for idx, row_lm in linea_merged.iterrows():
@@ -385,7 +410,7 @@ body.theme-carnes .tab-btn.active { color: #dc2626; border-bottom-color: #dc2626
 .tab-panel { display: none; flex: 1; overflow: hidden; }
 .tab-panel.active { display: flex; }
 
-/* ── RESUMEN (RESTAURADO A COMO ESTABA AL PRINCIPIO) ── */
+/* ── RESUMEN ── */
 .resumen-panel { flex-direction: row; align-items: flex-start; flex-wrap: wrap; gap: 14px; padding: 18px 24px; overflow-y: auto; background: var(--bg); }
 .plant-card { flex: 1; min-width: 420px; background: var(--surface); border-radius: 10px; border: 1px solid var(--border); overflow: hidden; display: flex; box-shadow: 0 2px 6px rgba(0,0,0,0.03); }
 .plant-bar-col { width: 200px; flex-shrink: 0; padding: 12px 14px; display: flex; flex-direction: column; }
@@ -911,11 +936,9 @@ function renderResumen() {
       const probColor = e.prob > 60 ? '#b91c1c' : e.prob > 35 ? '#b45309' : '#047857';
       const rankTop = i + 1;
       
-      // Lógica de coincidencia inteligente para sacar el texto de Acción Correctiva
       let accionStr = "-";
       if (dbRaw.acciones) {
         for (let col in dbRaw.acciones) {
-            // Si el nombre de la planta en el excel coincide total o parcialmente con la planta real
             if (pKeyLowerCase.includes(col) || col.includes(pKeyLowerCase)) {
                 accionStr = dbRaw.acciones[col][rankTop] || "-";
                 break;
