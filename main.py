@@ -106,7 +106,6 @@ def procesar_datos_confiabilidad():
             col_tpo_det = buscar_tiempo_detencion_hr(df_det)
             
             if not all([col_equipo, col_semana_det, col_linea_det, col_tpo_det]):
-                print(f"   ❌ Faltan columnas en FEM. Eq:{col_equipo}, Sem:{col_semana_det}, Lin:{col_linea_det}, Tpo:{col_tpo_det}")
                 continue
 
             df_det = df_det.dropna(subset=[col_equipo, col_semana_det, col_linea_det])
@@ -115,10 +114,15 @@ def procesar_datos_confiabilidad():
             df_det['Linea_Clean'] = df_det[col_linea_det].astype(str).str.replace('  ', ' ').str.strip().str.upper()
             df_det['Equipo_Clean'] = df_det[col_equipo].astype(str).str.strip().str.title()
             
-            # Limpia letras como "S19" dejando solo "19"
             df_det['Semana_Clean'] = df_det[col_semana_det].astype(str).str.replace(r'[^\d]', '', regex=True)
             df_det['Semana_Clean'] = pd.to_numeric(df_det['Semana_Clean'], errors='coerce').fillna(-1).astype(int)
             df_det = df_det[df_det['Semana_Clean'] > 0]
+            
+            # 🛑 FILTROS ESPECÍFICOS DE NEGOCIO (DETENCIONES) 🛑
+            # L2: Solo de la semana 15 en adelante
+            df_det = df_det[~((df_det['Linea_Clean'].str.contains('L2', na=False)) & (df_det['Semana_Clean'] < 15))]
+            # L4: Solo de la semana 19 en adelante
+            df_det = df_det[~((df_det['Linea_Clean'].str.contains('L4', na=False)) & (df_det['Semana_Clean'] < 19))]
             
             agrup_det_linea = df_det.groupby(['Linea_Clean', 'Semana_Clean']).agg(
                 tpo_perdido_linea=('Hrs_Perdidas', 'sum')
@@ -132,14 +136,13 @@ def procesar_datos_confiabilidad():
             # --- LIMPIEZA TIEMPOS PLANIFICADOS ---
             col_semana_tpo = buscar_columna_semana(df_tpo)
             col_linea_tpo = buscar_columna_linea(df_tpo)
-            col_tpo_plan = buscar_tiempo_planificado_hr(df_tpo)
+            col_tpo_oper = buscar_tiempo_operativo_hr(df_tpo) # <-- Usa el buscador corregido que te di antes
             
-            if not all([col_semana_tpo, col_linea_tpo, col_tpo_plan]):
-                print(f"   ❌ Faltan columnas en Tiempos. Sem:{col_semana_tpo}, Lin:{col_linea_tpo}, Tpo:{col_tpo_plan}")
+            if not all([col_semana_tpo, col_linea_tpo, col_tpo_oper]):
                 continue
 
             df_tpo = df_tpo.dropna(subset=[col_linea_tpo, col_semana_tpo])
-            df_tpo['Hrs_Plan'] = pd.to_numeric(df_tpo[col_tpo_plan], errors='coerce').fillna(0)
+            df_tpo['Hrs_Oper'] = pd.to_numeric(df_tpo[col_tpo_oper], errors='coerce').fillna(0)
             
             df_tpo['Linea_Clean'] = df_tpo[col_linea_tpo].astype(str).str.replace('  ', ' ').str.strip().str.upper()
             
@@ -147,15 +150,19 @@ def procesar_datos_confiabilidad():
             df_tpo['Semana_Clean'] = pd.to_numeric(df_tpo['Semana_Clean'], errors='coerce').fillna(-1).astype(int)
             df_tpo = df_tpo[df_tpo['Semana_Clean'] > 0]
             
+            # 🛑 FILTROS ESPECÍFICOS DE NEGOCIO (TIEMPOS PLANIFICADOS) 🛑
+            # L2: Solo de la semana 15 en adelante
+            df_tpo = df_tpo[~((df_tpo['Linea_Clean'].str.contains('L2', na=False)) & (df_tpo['Semana_Clean'] < 15))]
+            # L4: Solo de la semana 19 en adelante
+            df_tpo = df_tpo[~((df_tpo['Linea_Clean'].str.contains('L4', na=False)) & (df_tpo['Semana_Clean'] < 19))]
+            
             agrup_tpo_linea = df_tpo.groupby(['Linea_Clean', 'Semana_Clean']).agg(
-                tpo_plan_linea=('Hrs_Plan', 'sum')
+                tpo_operativo_linea=('Hrs_Oper', 'sum')
             ).reset_index()
             
-            # --- CRUCE MAESTRO (OUTER JOIN PARA NO PERDER DATOS) ---
+            # --- CRUCE MAESTRO ---
             linea_merged = pd.merge(agrup_tpo_linea, agrup_det_linea, on=['Linea_Clean', 'Semana_Clean'], how='outer')
-            linea_merged['tpo_plan_linea'] = linea_merged['tpo_plan_linea'].fillna(0)
-            linea_merged['tpo_perdido_linea'] = linea_merged['tpo_perdido_linea'].fillna(0)
-            linea_merged['tpo_operativo_linea'] = (linea_merged['tpo_plan_linea'] - linea_merged['tpo_perdido_linea']).clip(lower=0)
+            linea_merged['tpo_operativo_linea'] = linea_merged['tpo_operativo_linea'].fillna(0)
             
             for _, row in linea_merged.iterrows():
                 datos_lineas.append({
@@ -186,6 +193,7 @@ def procesar_datos_confiabilidad():
     db_json = { "equipos": datos_equipos, "lineas": datos_lineas }
     print(f"\n✅ Extracción finalizada. Datos listos para el Dashboard.")
     return db_json
+
 
 # ==========================================
 # 4. GENERADOR HTML DASHBOARD
