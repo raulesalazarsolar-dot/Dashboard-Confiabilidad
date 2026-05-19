@@ -392,7 +392,7 @@ body.theme-carnes .tab-btn.active { color: #dc2626; border-bottom-color: #dc2626
 .tab-panel.active { display: flex; }
 /* ── RESUMEN ── */
 .resumen-panel { display: flex; flex-direction: row; align-items: stretch; flex-wrap: nowrap; gap: 18px; padding: 18px 24px; overflow-x: auto; overflow-y: hidden; background: var(--bg); }
-.plant-card { flex: 0 0 auto; width: 480px; background: var(--surface); border-radius: 10px; border: 1px solid var(--border); overflow: hidden; display: flex; box-shadow: 0 2px 6px rgba(0,0,0,0.03); }
+.eq-rank-row { display: grid; grid-template-columns: 22px max-content 88px 88px; gap: 7px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); }
 .plant-bar-col { width: 200px; flex-shrink: 0; padding: 12px 14px; display: flex; flex-direction: column; }
 .plant-bar-col.tema-masas { background: #1A3A5C; }
 .plant-bar-col.tema-carnes { background: #4A0E0E; }
