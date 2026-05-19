@@ -279,7 +279,6 @@ def generar_html_moderno(db_json):
         .btn-export:hover { background: var(--success); color: white; }
         
         .content { flex: 1; padding: 30px; overflow-y: auto; display: flex; flex-direction: column; gap: 25px; }
-        /* Grid ajustado a 6 KPIs */
         .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 15px; }
         .kpi-card { background: var(--surface); padding: 15px; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 2px 4px rgba(0,0,0,0.02); display: flex; flex-direction: column; gap: 5px; position: relative; overflow: hidden; }
         .kpi-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--accent); }
@@ -398,8 +397,8 @@ def generar_html_moderno(db_json):
                     <div class="canvas-wrapper"><canvas id="chart_trend_conf"></canvas></div>
                 </div>
                 <div class="chart-container">
-                    <div class="chart-header">⏱️ Evolución Tiempos Medios (MTBF vs MTTR)</div>
-                    <div class="canvas-wrapper"><canvas id="chart_trend_mtbf"></canvas></div>
+                    <div class="chart-header">🎯 Jackknife: Tiempo Perdido vs Frecuencia</div>
+                    <div class="canvas-wrapper"><canvas id="chart_jackknife"></canvas></div>
                 </div>
             </div>
 
@@ -611,27 +610,22 @@ def generar_html_moderno(db_json):
         
         let confTrend = [];
         let probTrend = [];
-        let mtbfTrend = [];
-        let mttrTrend = [];
 
         weeks.forEach(w => {
             let dLn = currentLnData.filter(d => d.semana === w);
             let dEq = currentEqData.filter(d => d.semana === w);
             
             let sOp = dLn.reduce((s, d) => s + d.tpo_operativo_linea, 0);
-            let sPerd = dEq.reduce((s, d) => s + d.tpo_perdido_eq, 0);
             let sDet = dEq.reduce((s, d) => s + d.detenciones, 0);
             
             let wMtbf = sDet > 0 ? (sOp / sDet) : (sOp > 0 ? sOp : 0);
-            let wMttr = sDet > 0 ? (sPerd / sDet) : 0;
             let wConf = sDet > 0 ? Math.exp(-120 / wMtbf) * 100 : (sOp > 0 ? 100 : 0);
             
             confTrend.push(wConf.toFixed(2));
             probTrend.push((sOp > 0 ? 100-wConf : 0).toFixed(2));
-            mtbfTrend.push(wMtbf.toFixed(2));
-            mttrTrend.push(wMttr.toFixed(2));
         });
 
+        // 1. Gráfico de Tendencia
         if(chartInstances['trend_conf']) chartInstances['trend_conf'].destroy();
         chartInstances['trend_conf'] = new Chart(document.getElementById('chart_trend_conf'), {
             type: 'line',
@@ -645,21 +639,53 @@ def generar_html_moderno(db_json):
             options: { maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } }
         });
 
-        if(chartInstances['trend_mtbf']) chartInstances['trend_mtbf'].destroy();
-        chartInstances['trend_mtbf'] = new Chart(document.getElementById('chart_trend_mtbf'), {
-            type: 'line',
+        // 2. Gráfico Jackknife (Dispersión)
+        if(chartInstances['jackknife']) chartInstances['jackknife'].destroy();
+        
+        let jackknifeData = tableDataFull.filter(d => d.det > 0).map(d => ({
+            x: d.det, 
+            y: d.tpop, 
+            e: d.e,
+            l: d.l
+        }));
+
+        chartInstances['jackknife'] = new Chart(document.getElementById('chart_jackknife'), {
+            type: 'scatter',
             data: {
-                labels: weeks.map(w => 'Semana ' + w),
-                datasets: [
-                    { label: 'MTBF (Hrs)', data: mtbfTrend, borderColor: secColor, borderWidth: 3, tension: 0.3, yAxisID: 'y' },
-                    { label: 'MTTR (Hrs)', data: mttrTrend, borderColor: '#f59e0b', borderWidth: 3, borderDash: [5, 5], tension: 0.3, yAxisID: 'y1' }
-                ]
+                datasets: [{
+                    label: 'Equipos',
+                    data: jackknifeData,
+                    backgroundColor: isCarnesTheme ? '#dc2626' : '#f59e0b',
+                    borderColor: isCarnesTheme ? '#991b1b' : '#b45309',
+                    borderWidth: 1,
+                    pointRadius: 6,
+                    pointHoverRadius: 8
+                }]
             },
             options: {
                 maintainAspectRatio: false,
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                let d = ctx.raw;
+                                return `${d.e} (${d.l}): ${d.x} Detenciones, ${d.y.toFixed(1)} Hrs`;
+                            }
+                        }
+                    },
+                    legend: { display: false }
+                },
                 scales: {
-                    y: { type: 'linear', position: 'left', title: {display:true, text:'MTBF (h)'} },
-                    y1: { type: 'linear', position: 'right', grid: { drawOnChartArea: false }, title: {display:true, text:'MTTR (h)'} }
+                    x: { 
+                        type: 'linear', 
+                        position: 'bottom', 
+                        title: { display: true, text: 'Repetición (N° Detenciones)', font: {weight: 'bold'} }
+                    },
+                    y: { 
+                        type: 'linear', 
+                        position: 'left', 
+                        title: { display: true, text: 'Durabilidad (Tiempo Perdido Hrs)', font: {weight: 'bold'} } 
+                    }
                 }
             }
         });
