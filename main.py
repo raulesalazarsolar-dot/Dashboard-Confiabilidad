@@ -855,12 +855,19 @@ function renderResumen() {
   Object.keys(lnByPlanta).sort().forEach(planta => {
     const pKeyLowerCase = planta.toLowerCase();
     
-    // Tema dinámico según el nombre de la planta
     let tema = 'tema-masas';
     let temaPillColor = '#0071CE';
-    if ('carne' in pKeyLowerCase || 'mercadeo' in pKeyLowerCase) { tema = 'tema-carnes'; temaPillColor = '#C0392B'; }
-    elif ('dely' in pKeyLowerCase) { tema = 'tema-dely'; temaPillColor = '#00897B'; }
-    elif ('molida' in pKeyLowerCase) { tema = 'tema-molida'; temaPillColor = '#D35400'; }
+    
+    if (pKeyLowerCase.includes('carne') || pKeyLowerCase.includes('mercadeo')) { 
+        tema = 'tema-carnes'; 
+        temaPillColor = '#C0392B'; 
+    } else if (pKeyLowerCase.includes('dely')) { 
+        tema = 'tema-dely'; 
+        temaPillColor = '#00897B'; 
+    } else if (pKeyLowerCase.includes('molida')) { 
+        tema = 'tema-molida'; 
+        temaPillColor = '#D35400'; 
+    }
 
     const lineas = lnByPlanta[planta];
     const eqs    = Object.values(eqByPlanta[planta] || {});
