@@ -15,54 +15,47 @@ DATA_DIR = "./data"
 OUTPUT_HTML = "index.html"
 
 # ==========================================
-# 2. BUSCADORES ULTRA-ESTRICTOS (A PRUEBA DE ERRORES)
+# 2. BUSCADORES UNIVERSALES E INTELIGENTES
 # ==========================================
 def buscar_columna_linea(df):
-    for c in df.columns:
-        if str(c).strip().lower().replace('í', 'i') == 'linea': return c
     for c in df.columns:
         if 'linea' in str(c).strip().lower().replace('í', 'i') and 'aux' not in str(c).lower(): return c
     return None
 
 def buscar_columna_equipo(df, planta_nombre):
     planta_lower = str(planta_nombre).lower()
-    
-    # Caso especial: En Carnes Mercadeo, la máquina real está en 'Detalle'
     if "mercadeo" in planta_lower:
         for c in df.columns:
             if str(c).strip().lower() == 'detalle': return c
             
-    # Para el resto (Molida, Panadería, Dely), la máquina está en 'Equipo' o 'Componente'
     for c in df.columns:
-        if str(c).strip().lower() == 'equipo': return c
-    for c in df.columns:
-        if str(c).strip().lower() == 'componente': return c
-        
-    # Fallback de seguridad
-    for c in df.columns:
-        if str(c).strip().lower() == 'detalle': return c
+        cl = str(c).strip().lower()
+        if cl in ['equipo', 'componente', 'detalle']: return c
     return None
 
 def buscar_columna_semana(df):
-    # Busca todas las candidatas que tengan la palabra semana
-    candidatas = [c for c in df.columns if 'semana' in str(c).lower() and 'aux' not in str(c).lower()]
-    # Retorna la primera que realmente contenga datos (Esquiva columnas vacías)
-    for c in candidatas:
-        if not df[c].isnull().all(): return c
-    return candidatas[0] if candidatas else None
+    for c in df.columns:
+        if 'semana' in str(c).lower() and 'aux' not in str(c).lower():
+            if not df[c].isnull().all(): return c
+    return None
 
 def buscar_tiempo_detencion_hr(df):
     for c in df.columns:
-        cl = str(c).lower().strip().replace('  ', ' ')
-        if 'detencion' in cl and 'hr' in cl: return c
+        if 'detencion' in str(c).lower() and 'hr' in str(c).lower(): return c
     return None
 
-def buscar_tiempo_operativo_hr(df):
-    # Extrae el Tpo Operativo [hr] real de la hoja de tiempos
-    for c in df.columns:
-        cl = str(c).lower().strip().replace('  ', ' ')
-        if 'operativo' in cl and 'hr' in cl: return c
-    return None
+def buscar_columna_tiempo_base(df):
+    cols_lower = [str(c).lower().replace('  ', ' ').strip() for c in df.columns]
+    
+    # 1. Prioridad: Tiempo Operativo (Masas/Panadería)
+    for i, c in enumerate(cols_lower):
+        if 'operativo' in c and 'hr' in c: return df.columns[i], 'operativo'
+        
+    # 2. Fallback: Tiempo Planificado/Disponible (Carnes)
+    for i, c in enumerate(cols_lower):
+        if ('plan' in c or 'disponible' in c) and 'hr' in c: return df.columns[i], 'planificado'
+        
+    return None, None
 
 # ==========================================
 # 3. EXTRACCIÓN Y TRANSFORMACIÓN (ETL)
@@ -106,7 +99,7 @@ def procesar_datos_confiabilidad():
             col_tpo_det = buscar_tiempo_detencion_hr(df_det)
             
             if not all([col_equipo, col_semana_det, col_linea_det, col_tpo_det]):
-                print(f"   ❌ Faltan columnas en FEM. Eq:{col_equipo}, Sem:{col_semana_det}, Lin:{col_linea_det}, Tpo:{col_tpo_det}")
+                print(f"   ❌ Faltan columnas vitales en FEM. Saltando...")
                 continue
 
             df_det = df_det.dropna(subset=[col_equipo, col_semana_det, col_linea_det])
@@ -120,9 +113,7 @@ def procesar_datos_confiabilidad():
             df_det = df_det[df_det['Semana_Clean'] > 0]
             
             # 🛑 FILTROS ESPECÍFICOS DE NEGOCIO (DETENCIONES) 🛑
-            # L2: Solo de la semana 15 en adelante
             df_det = df_det[~((df_det['Linea_Clean'].str.contains('L2', na=False)) & (df_det['Semana_Clean'] < 15))]
-            # L4: Solo de la semana 19 en adelante
             df_det = df_det[~((df_det['Linea_Clean'].str.contains('L4', na=False)) & (df_det['Semana_Clean'] < 19))]
             
             agrup_det_linea = df_det.groupby(['Linea_Clean', 'Semana_Clean']).agg(
@@ -137,34 +128,38 @@ def procesar_datos_confiabilidad():
             # --- LIMPIEZA TIEMPOS PLANIFICADOS ---
             col_semana_tpo = buscar_columna_semana(df_tpo)
             col_linea_tpo = buscar_columna_linea(df_tpo)
-            col_tpo_oper = buscar_tiempo_operativo_hr(df_tpo)
+            col_tiempo_base, tipo_tiempo = buscar_columna_tiempo_base(df_tpo)
             
-            if not all([col_semana_tpo, col_linea_tpo, col_tpo_oper]):
-                print(f"   ❌ Faltan columnas en Tiempos. Sem:{col_semana_tpo}, Lin:{col_linea_tpo}, TpoOper:{col_tpo_oper}")
+            if not all([col_semana_tpo, col_linea_tpo, col_tiempo_base]):
+                print(f"   ❌ Faltan columnas de tiempo en {archivo_nombre}. Saltando...")
                 continue
 
             df_tpo = df_tpo.dropna(subset=[col_linea_tpo, col_semana_tpo])
-            df_tpo['Hrs_Oper'] = pd.to_numeric(df_tpo[col_tpo_oper], errors='coerce').fillna(0)
-            
+            df_tpo['Hrs_Base'] = pd.to_numeric(df_tpo[col_tiempo_base], errors='coerce').fillna(0)
             df_tpo['Linea_Clean'] = df_tpo[col_linea_tpo].astype(str).str.replace('  ', ' ').str.strip().str.upper()
             
             df_tpo['Semana_Clean'] = df_tpo[col_semana_tpo].astype(str).str.replace(r'[^\d]', '', regex=True)
             df_tpo['Semana_Clean'] = pd.to_numeric(df_tpo['Semana_Clean'], errors='coerce').fillna(-1).astype(int)
             df_tpo = df_tpo[df_tpo['Semana_Clean'] > 0]
             
-            # 🛑 FILTROS ESPECÍFICOS DE NEGOCIO (TIEMPOS PLANIFICADOS) 🛑
-            # L2: Solo de la semana 15 en adelante
+            # 🛑 FILTROS ESPECÍFICOS DE NEGOCIO (TIEMPOS) 🛑
             df_tpo = df_tpo[~((df_tpo['Linea_Clean'].str.contains('L2', na=False)) & (df_tpo['Semana_Clean'] < 15))]
-            # L4: Solo de la semana 19 en adelante
             df_tpo = df_tpo[~((df_tpo['Linea_Clean'].str.contains('L4', na=False)) & (df_tpo['Semana_Clean'] < 19))]
             
             agrup_tpo_linea = df_tpo.groupby(['Linea_Clean', 'Semana_Clean']).agg(
-                tpo_operativo_linea=('Hrs_Oper', 'sum')
+                tpo_base_linea=('Hrs_Base', 'sum')
             ).reset_index()
             
             # --- CRUCE MAESTRO ---
             linea_merged = pd.merge(agrup_tpo_linea, agrup_det_linea, on=['Linea_Clean', 'Semana_Clean'], how='outer')
-            linea_merged['tpo_operativo_linea'] = linea_merged['tpo_operativo_linea'].fillna(0)
+            linea_merged['tpo_perdido_linea'] = linea_merged.get('tpo_perdido_linea', pd.Series([0]*len(linea_merged))).fillna(0)
+            linea_merged['tpo_base_linea'] = linea_merged['tpo_base_linea'].fillna(0)
+            
+            # Calculamos el Tiempo Operativo Final dependiendo de qué columna encontró
+            if tipo_tiempo == 'operativo':
+                linea_merged['tpo_operativo_linea'] = linea_merged['tpo_base_linea']
+            else:
+                linea_merged['tpo_operativo_linea'] = (linea_merged['tpo_base_linea'] - linea_merged['tpo_perdido_linea']).clip(lower=0)
             
             for _, row in linea_merged.iterrows():
                 datos_lineas.append({
@@ -470,13 +465,9 @@ def generar_html_moderno(db_json):
         tableDataFull = Object.values(eqMap).map(d => {
             let opTime = opTimeByLine[d.p + "|" + d.l] || 0;
             
-            // MTBF = Tiempo Operativo Linea / Detenciones
             let mtbf = d.det > 0 ? (opTime / d.det) : 0;
-            
-            // MTTR = Tiempo Perdido Equipo / Detenciones
             let mttr = d.det > 0 ? (d.tpop / d.det) : 0;
             
-            // Confiabilidad y Mantenibilidad Exponencial
             let conf = mtbf > 0 ? Math.exp(-120 / mtbf) * 100 : (d.det === 0 ? 100 : 0);
             let mant = mttr > 0 ? (1 - Math.exp(-1 / mttr)) * 100 : 100;
             let prob = 100 - conf;
