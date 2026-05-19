@@ -111,9 +111,9 @@ def procesar_datos_confiabilidad():
             df_det['Semana_Clean'] = pd.to_numeric(df_det['Semana_Clean'], errors='coerce').fillna(-1).astype(int)
             df_det = df_det[df_det['Semana_Clean'] > 0]
             
-            # 🛑 FILTROS ESPECÍFICOS DE NEGOCIO (DETENCIONES) 🛑
-            df_det = df_det[~((df_det['Linea_Clean'].str.contains('L2', na=False)) & (df_det['Semana_Clean'] < 15))]
-            df_det = df_det[~((df_det['Linea_Clean'].str.contains('L4', na=False)) & (df_det['Semana_Clean'] < 19))]
+            # 🛑 FILTROS ESPECÍFICOS DE NEGOCIO (DETENCIONES CORREGIDOS) 🛑
+            df_det = df_det[~((df_det['Linea_Clean'].str.startswith('L2', na=False)) & (df_det['Semana_Clean'] < 15))]
+            df_det = df_det[~((df_det['Linea_Clean'].str.startswith('L4', na=False)) & (df_det['Semana_Clean'] < 19))]
             
             agrup_det_linea = df_det.groupby(['Linea_Clean', 'Semana_Clean']).agg(
                 tpo_perdido_linea=('Hrs_Perdidas', 'sum')
@@ -146,9 +146,9 @@ def procesar_datos_confiabilidad():
             df_tpo['Semana_Clean'] = pd.to_numeric(df_tpo['Semana_Clean'], errors='coerce').fillna(-1).astype(int)
             df_tpo = df_tpo[df_tpo['Semana_Clean'] > 0]
             
-            # 🛑 FILTROS ESPECÍFICOS DE NEGOCIO (TIEMPOS) 🛑
-            df_tpo = df_tpo[~((df_tpo['Linea_Clean'].str.contains('L2', na=False)) & (df_tpo['Semana_Clean'] < 15))]
-            df_tpo = df_tpo[~((df_tpo['Linea_Clean'].str.contains('L4', na=False)) & (df_tpo['Semana_Clean'] < 19))]
+            # 🛑 FILTROS ESPECÍFICOS DE NEGOCIO (TIEMPOS CORREGIDOS) 🛑
+            df_tpo = df_tpo[~((df_tpo['Linea_Clean'].str.startswith('L2', na=False)) & (df_tpo['Semana_Clean'] < 15))]
+            df_tpo = df_tpo[~((df_tpo['Linea_Clean'].str.startswith('L4', na=False)) & (df_tpo['Semana_Clean'] < 19))]
             
             agrup_tpo_linea = df_tpo.groupby(['Linea_Clean', 'Semana_Clean']).agg(
                 tpo_operativo_linea=('Hrs_Oper', 'sum'),
@@ -626,7 +626,7 @@ def generar_html_moderno(db_json):
             mttrTrend.push(wMttr.toFixed(2));
         });
 
-        // 1. Gráfico Jackknife (Reemplaza Tendencia Confiabilidad)
+        // 1. Gráfico Jackknife (Frecuencia vs Durabilidad)
         if(chartInstances['jackknife']) chartInstances['jackknife'].destroy();
         
         let jackknifeData = tableDataFull.filter(d => d.det > 0).map(d => ({
@@ -677,7 +677,7 @@ def generar_html_moderno(db_json):
             }
         });
 
-        // 2. Gráfico de Evolución Tiempos Medios (MTBF vs MTTR) - Conservado Intacto
+        // 2. Gráfico de Evolución Tiempos Medios (MTBF vs MTTR)
         if(chartInstances['trend_mtbf']) chartInstances['trend_mtbf'].destroy();
         chartInstances['trend_mtbf'] = new Chart(document.getElementById('chart_trend_mtbf'), {
             type: 'line',
