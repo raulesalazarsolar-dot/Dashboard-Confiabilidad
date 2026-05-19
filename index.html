@@ -120,7 +120,7 @@
             </div>
             <div style="padding: 20px; border-top: 1px solid var(--border);">
                 <button class="btn-export" onclick="descargarExcel()">⬇️ Exportar Data a Excel</button>
-                <div style="text-align:center; font-size:0.7rem; color:var(--text-muted); margin-top:15px; font-weight:600;">Actualizado: 19/05/2026 11:16</div>
+                <div style="text-align:center; font-size:0.7rem; color:var(--text-muted); margin-top:15px; font-weight:600;">Actualizado: 19/05/2026 11:23</div>
             </div>
         </div>
 
@@ -387,7 +387,7 @@
             mttrTrend.push(wMttr.toFixed(2));
         });
 
-        // 1. Gráfico Jackknife (Reemplaza Tendencia Confiabilidad)
+        // 1. Gráfico Jackknife (Frecuencia vs Durabilidad)
         if(chartInstances['jackknife']) chartInstances['jackknife'].destroy();
         
         let jackknifeData = tableDataFull.filter(d => d.det > 0).map(d => ({
@@ -438,7 +438,7 @@
             }
         });
 
-        // 2. Gráfico de Evolución Tiempos Medios (MTBF vs MTTR) - Conservado Intacto
+        // 2. Gráfico de Evolución Tiempos Medios (MTBF vs MTTR)
         if(chartInstances['trend_mtbf']) chartInstances['trend_mtbf'].destroy();
         chartInstances['trend_mtbf'] = new Chart(document.getElementById('chart_trend_mtbf'), {
             type: 'line',
