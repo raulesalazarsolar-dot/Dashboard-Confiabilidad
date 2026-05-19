@@ -43,7 +43,7 @@ def buscar_columna_semana(df):
     return None
 
 def buscar_tiempo_detencion_hr(df, super_planta):
-    # Reglas explícitas según imagen
+    # Reglas explícitas
     for c in df.columns:
         cl = str(c).lower()
         if super_planta == 'Carnes' and 'tpo detenciones' in cl and 'hr' in cl:
@@ -72,7 +72,7 @@ def limpiar_semana(serie):
     return resultado.fillna(-1).astype(int)
 
 def buscar_columna_tiempo_plan(df, super_planta):
-    # Reglas explícitas según la imagen
+    # Reglas explícitas
     for c in df.columns:
         cl = str(c).lower().strip()
         if super_planta == 'Carnes' and 'tpo hr plan' in cl:
@@ -168,8 +168,6 @@ def procesar_datos_confiabilidad():
             col_equipo      = buscar_columna_equipo(df_det, planta_nombre)
             col_semana_det  = buscar_columna_semana(df_det)
             col_linea_det   = buscar_columna_linea(df_det)
-            
-            # Buscador ajustado para CARNES
             col_tpo_det     = buscar_tiempo_detencion_hr(df_det, super_planta)
 
             if not all([col_equipo, col_semana_det, col_linea_det, col_tpo_det]):
@@ -193,8 +191,6 @@ def procesar_datos_confiabilidad():
             col_semana_tpo  = buscar_columna_semana(df_tpo)
             col_linea_tpo   = buscar_columna_linea(df_tpo)
             col_tpo_oper    = buscar_columna_tiempo_oper(df_tpo)
-            
-            # Buscador ajustado para CARNES y MASAS
             col_tpo_plan    = buscar_columna_tiempo_plan(df_tpo, super_planta)
 
             if not all([col_semana_tpo, col_linea_tpo]) or (not col_tpo_oper and not col_tpo_plan):
@@ -221,7 +217,6 @@ def procesar_datos_confiabilidad():
             linea_merged['tpo_operativo_linea'] = linea_merged.get('tpo_operativo_linea', pd.Series([0] * len(linea_merged))).fillna(0)
             linea_merged['tpo_plan_linea']      = linea_merged.get('tpo_plan_linea',      pd.Series([0] * len(linea_merged))).fillna(0)
 
-            # 🔧 RECONCILIACIÓN DE TIEMPOS
             tipo_tiempo = 'operativo' if col_tpo_oper else 'plan'
 
             for idx, row in linea_merged.iterrows():
@@ -229,7 +224,6 @@ def procesar_datos_confiabilidad():
                 oper    = row['tpo_operativo_linea']
                 perdido = row['tpo_perdido_linea']
 
-                # REGLA EXCLUSIVA PARA CARNES SOLICITADA EN LA IMAGEN
                 if super_planta == 'Carnes':
                     linea_merged.at[idx, 'tpo_operativo_linea'] = max(0, plan - perdido)
                 else:
@@ -323,19 +317,20 @@ def generar_html_moderno(db_json):
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap');
 :root {
-  --primary: #0f172a; --secondary: #1e293b; --accent: #0ea5e9;
-  --bg: #f1f5f9; --surface: #ffffff; --border: #e2e8f0;
-  --text: #0f172a; --text-muted: #64748b;
-  --success: #10b981; --danger: #ef4444; --warning: #f59e0b;
+  --primary: #0D2C54; --secondary: #3A4A5C; --accent: #0071CE;
+  --bg: #F2F6FC; --surface: #ffffff; --border: #DDE6F2;
+  --text: #0D2C54; --text-muted: #8899AA;
+  --success: #27AE60; --danger: #C0392B; --warning: #E67E22;
 }
 body.theme-carnes {
-  --primary: #450a0a; --secondary: #7f1d1d; --accent: #dc2626;
+  --primary: #4A0E0E; --secondary: #7f1d1d; --accent: #A93226;
   --bg: #fef2f2; --border: #fecaca;
 }
-* { box-sizing: border-box; outline: none; font-family: 'Segoe UI', system-ui, sans-serif; }
+* { box-sizing: border-box; outline: none; font-family: 'DM Sans', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
 body { background: var(--bg); color: var(--text); margin: 0; display: flex; flex-direction: column; min-height: 100vh; transition: background 0.4s; }
-.top-bar { background: var(--primary); color: white; padding: 0 25px; height: 65px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); z-index: 10; transition: background 0.4s; }
+.top-bar { background: var(--primary); color: white; padding: 0 25px; height: 65px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); z-index: 10; transition: background 0.4s; border-bottom:4px solid var(--accent); }
 .brand { display: flex; align-items: center; gap: 15px; }
 .brand h2 { margin: 0; font-size: 1.3rem; font-weight: 700; letter-spacing: 0.5px; }
 .brand span { opacity: 0.7; font-weight: 400; font-size: 1rem; border-left: 1px solid rgba(255,255,255,0.3); padding-left: 15px; }
@@ -355,7 +350,7 @@ input:checked + .slider:before { transform: translateX(24px); }
 .f-group { margin-bottom: 20px; }
 .f-group label { display: block; font-size: 0.75rem; font-weight: 700; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
 select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.9rem; color: var(--text); background: var(--bg); cursor: pointer; transition: 0.2s; }
-select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(14,165,233,0.2); }
+select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,113,206,0.2); }
 .rango-semanas { display: flex; gap: 10px; align-items: center; }
 .rango-semanas select { flex: 1; }
 .rango-semanas span { font-weight: 700; color: var(--text-muted); }
@@ -379,73 +374,46 @@ select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(14,165,23
 .table-header input { padding: 8px 15px; border: 1px solid var(--border); border-radius: 20px; font-size: 0.9rem; width: 300px; background: var(--bg); }
 .table-wrapper { overflow-x: auto; max-height: 500px; }
 table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.85rem; }
-th { background: #f8fafc; padding: 12px 15px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; position: sticky; top: 0; z-index: 2; border-bottom: 2px solid var(--border); cursor: pointer; }
+th { background: #F8FAFD; padding: 12px 15px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; position: sticky; top: 0; z-index: 2; border-bottom: 2px solid var(--border); cursor: pointer; }
 body.theme-carnes th { background: #fef2f2; }
 td { padding: 12px 15px; border-bottom: 1px solid var(--border); color: var(--secondary); font-weight: 500; }
 tr.clickable-row { cursor: pointer; transition: background 0.15s; }
-tr.clickable-row:hover td { background: rgba(14,165,233,0.04) !important; }
-body.theme-carnes tr.clickable-row:hover td { background: rgba(220,38,38,0.04) !important; }
+tr.clickable-row:hover td { background: rgba(0,113,206,0.04) !important; }
+body.theme-carnes tr.clickable-row:hover td { background: rgba(169,50,38,0.04) !important; }
 .badge { padding: 4px 8px; border-radius: 6px; font-weight: 700; font-size: 0.75rem; }
-.b-ok { background: #d1fae5; color: #047857; }
-.b-warn { background: #fef3c7; color: #b45309; }
-.b-danger { background: #fee2e2; color: #b91c1c; }
-.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15,23,42,0.6); backdrop-filter: blur(5px); display: none; justify-content: center; align-items: center; z-index: 100; padding: 20px; }
+.b-ok { background: #C8E6C9; color: #1B5E20; }
+.b-warn { background: #FFF9C4; color: #827717; }
+.b-danger { background: #FFCDD2; color: #B71C1C; }
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(13,44,84,0.6); backdrop-filter: blur(5px); display: none; justify-content: center; align-items: center; z-index: 100; padding: 20px; }
 .modal-content { background: var(--surface); width: 100%; max-width: 850px; border-radius: 16px; border: 1px solid var(--border); box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); display: flex; flex-direction: column; max-height: 80vh; animation: modalIn 0.2s ease-out; }
 @keyframes modalIn { from { transform: translateY(15px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-.modal-header { padding: 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: #f8fafc; border-top-left-radius: 16px; border-top-right-radius: 16px; }
+.modal-header { padding: 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: #F8FAFD; border-top-left-radius: 16px; border-top-right-radius: 16px; }
 body.theme-carnes .modal-header { background: #fef2f2; }
 .modal-header h3 { margin: 0; font-size: 1.2rem; font-weight: 800; color: var(--secondary); }
 .modal-header p { margin: 2px 0 0 0; font-size: 0.85rem; color: var(--text-muted); font-weight: 500; }
 .modal-body { padding: 20px; overflow-y: auto; }
 .close-btn { background: none; border: none; font-size: 1.5rem; color: var(--text-muted); cursor: pointer; font-weight: 700; }
 .close-btn:hover { color: var(--danger); }
-.modal-body table th { position: static; background: #f1f5f9; border-bottom: 1px solid var(--border); }
+.modal-body table th { position: static; background: #F8FAFD; border-bottom: 1px solid var(--border); }
 body.theme-carnes .modal-body table th { background: #fee2e2; }
+
 /* ── TABS ── */
 .tab-nav { background: var(--surface); border-bottom: 2px solid var(--border); display: flex; gap: 2px; padding: 0 20px; flex-shrink: 0; }
 .tab-btn { padding: 11px 22px; font-size: 0.85rem; font-weight: 700; color: var(--text-muted); border: none; background: none; cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: 0.2s; }
 .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
-body.theme-carnes .tab-btn.active { color: #dc2626; border-bottom-color: #dc2626; }
+body.theme-carnes .tab-btn.active { color: #A93226; border-bottom-color: #A93226; }
 .tab-btn:hover:not(.active) { color: var(--text); background: var(--bg); border-radius: 6px 6px 0 0; }
 .tab-panel { display: none; flex: 1; overflow: hidden; }
 .tab-panel.active { display: flex; }
 
-/* ── RESUMEN ── */
-.resumen-panel { flex-direction: row; align-items: flex-start; flex-wrap: wrap; gap: 14px; padding: 18px 24px; overflow-y: auto; background: var(--bg); }
-.plant-card { flex: 1; min-width: 420px; background: var(--surface); border-radius: 10px; border: 1px solid var(--border); overflow: hidden; display: flex; box-shadow: 0 2px 6px rgba(0,0,0,0.03); }
-.plant-bar-col { width: 200px; flex-shrink: 0; padding: 12px 14px; display: flex; flex-direction: column; }
+/* ── NUEVO DISEÑO RESUMEN (TIPO HTML ADJUNTO) ── */
+.resumen-panel { display:flex; flex-direction:column; padding: 15px; overflow-y: auto; background: #F4F6FA; width:100%; }
+.fila-planta { display:flex; flex:1; min-height:0; border-bottom:2px solid #DDE6F2; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.04); margin-bottom:15px; border-radius:5px; overflow:hidden;}
+.plant-bar-col { width: 220px; flex-shrink: 0; padding: 12px 14px; display: flex; flex-direction: column; }
 .plant-bar-col.tema-masas { background: #1A3A5C; }
 .plant-bar-col.tema-carnes { background: #4A0E0E; }
-.plant-bar-title { font-size: 8px; font-weight: 800; color: #fff; letter-spacing:.8px; text-transform: uppercase; margin-bottom: 8px; padding: 2px 8px; border-radius: 3px; display: inline-block; }
-.plant-bar-col.tema-masas .plant-bar-title { background: #0071CE; }
-.plant-bar-col.tema-carnes .plant-bar-title { background: #dc2626; }
-.plant-sub-lbl { font-size: 7.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: rgba(255,255,255,0.45); margin-bottom: 8px; padding-bottom: 5px; border-bottom: 1px solid rgba(255,255,255,0.15); }
-.line-bar-item { margin-bottom: 8px; }
-.line-bar-top { display: flex; align-items: center; gap: 5px; margin-bottom: 3px; }
-.line-bar-lbl { width: 34px; font-size: 8.5px; font-weight: 800; color: #fff; flex-shrink: 0; opacity:.9; }
-.line-bar-track { flex: 1; background: rgba(255,255,255,0.15); border-radius: 3px; height: 11px; overflow: hidden; }
-.line-bar-fill { height: 100%; border-radius: 3px; opacity: 0.9; }
-.line-bar-pct { width: 38px; text-align: right; font-size: 9px; font-weight: 800; flex-shrink: 0; }
-.line-hrs { display: flex; gap: 3px; align-items: center; font-size: 6.5px; color: rgba(255,255,255,0.75); flex-wrap: wrap; }
-.hrs-dot { width: 5px; height: 5px; border-radius: 1px; flex-shrink: 0; }
-.plant-avg { margin-top: auto; text-align: center; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.15); margin-top: 6px; }
-.plant-avg-lbl { font-size: 7px; font-weight: 700; color: rgba(255,255,255,0.45); text-transform: uppercase; letter-spacing:.8px; margin-bottom: 2px; }
-.plant-avg-val { font-size: 28px; font-weight: 800; color: #fff; line-height: 1; }
-.plant-eq-col { flex: 1; padding: 12px 16px; overflow-y: auto; }
-.plant-eq-col h4 { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing:.8px; color: var(--text-muted); margin-bottom: 10px; }
-
-/* ── GRID MODIFICADA CON LA COLUMNA ACCION CORRECTIVA ── */
-.eq-rank-row { display: grid; grid-template-columns: 22px 1fr 1.5fr 88px 88px; gap: 7px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); }
-.eq-rank-num { width: 20px; height: 20px; border-radius: 50%; font-size: 8px; font-weight: 800; color: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.rn1{background:#CC2222;}.rn2{background:#E65100;}.rn3{background:#F9A825;color:#333;}.rn4{background:#5D6D7E;}.rn5{background:#95A5A6;}
-.eq-rank-name { font-size: 10px; font-weight: 700; color: var(--secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.eq-rank-badge { font-size: 7px; padding: 1px 5px; border-radius: 3px; font-weight: 800; background: var(--accent); color: #fff; display: inline-block; margin-left: 4px; vertical-align: middle; }
-body.theme-carnes .eq-rank-badge { background: #dc2626; }
-.eq-rank-accion { font-size: 9px; font-weight: 500; font-style: italic; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.eq-rank-kpi { text-align: center; background: #f8fafc; border-radius: 5px; padding: 4px 3px; }
-body.theme-carnes .eq-rank-kpi { background: #fef2f2; }
-.eq-rank-kpi .rval { font-size: 12px; font-weight: 800; line-height: 1; display: block; }
-.eq-rank-kpi .rsub { font-size: 6.5px; color: var(--text-muted); margin-top: 1px; display: block; }
+.plant-bar-col.tema-dely { background: #2C4A3E; }
+.plant-bar-col.tema-molida { background: #4A2511; }
 </style>
 </head>
 <body>
@@ -572,8 +540,8 @@ body.theme-carnes .eq-rank-kpi { background: #fef2f2; }
 </div>
 
 <script>
-Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
-Chart.defaults.color = '#64748b';
+Chart.defaults.font.family = "'DM Sans', system-ui, sans-serif";
+Chart.defaults.color = '#8899AA';
 
 const dbRaw       = __DB_JSON_DATA__;
 const recordsEq   = dbRaw.equipos;
@@ -699,7 +667,7 @@ function applyFilters() {
 function drawCharts(sDesde, sHasta) {
   if (currentLnData.length === 0) return;
 
-  const secColor    = isCarnesTheme ? '#991b1b' : '#334155';
+  const secColor    = isCarnesTheme ? '#991b1b' : '#3A4A5C';
   let weeks        = [];
   let mtbfTrend    = [];
   let mttrTrend    = [];
@@ -724,8 +692,8 @@ function drawCharts(sDesde, sHasta) {
       datasets: [{
         label: 'Equipos',
         data: tableDataFull.filter(d => d.det > 0).map(d => ({ x: d.det, y: d.tpop, e: d.e, l: d.l })),
-        backgroundColor: isCarnesTheme ? '#dc2626' : '#ea580c',
-        borderColor:     isCarnesTheme ? '#991b1b' : '#b45309',
+        backgroundColor: isCarnesTheme ? '#C0392B' : '#0071CE',
+        borderColor:     isCarnesTheme ? '#7f1d1d' : '#0D2C54',
         borderWidth: 1, pointRadius: 6, pointHoverRadius: 8,
       }]
     },
@@ -749,7 +717,7 @@ function drawCharts(sDesde, sHasta) {
       labels: weeks.map(w => 'Semana ' + w),
       datasets: [
         { label: 'MTBF (Hrs)', data: mtbfTrend, borderColor: secColor,    borderWidth: 3, tension: 0.3, yAxisID: 'y' },
-        { label: 'MTTR (Hrs)', data: mttrTrend, borderColor: '#f59e0b',   borderWidth: 3, borderDash: [5, 5], tension: 0.3, yAxisID: 'y1' },
+        { label: 'MTTR (Hrs)', data: mttrTrend, borderColor: '#E67E22',   borderWidth: 3, borderDash: [5, 5], tension: 0.3, yAxisID: 'y1' },
       ],
     },
     options: {
@@ -883,10 +851,17 @@ function renderResumen() {
     eqByPlanta[d.planta][k].hrs += d.tpo_perdido_eq;
   });
 
-  const tema = isCarnesTheme ? 'tema-carnes' : 'tema-masas';
-  
   let html = '';
   Object.keys(lnByPlanta).sort().forEach(planta => {
+    const pKeyLowerCase = planta.toLowerCase();
+    
+    // Tema dinámico según el nombre de la planta
+    let tema = 'tema-masas';
+    let temaPillColor = '#0071CE';
+    if ('carne' in pKeyLowerCase || 'mercadeo' in pKeyLowerCase) { tema = 'tema-carnes'; temaPillColor = '#C0392B'; }
+    elif ('dely' in pKeyLowerCase) { tema = 'tema-dely'; temaPillColor = '#00897B'; }
+    elif ('molida' in pKeyLowerCase) { tema = 'tema-molida'; temaPillColor = '#D35400'; }
+
     const lineas = lnByPlanta[planta];
     const eqs    = Object.values(eqByPlanta[planta] || {});
 
@@ -912,28 +887,42 @@ function renderResumen() {
     const barras = lineaStats.map((s,i) => {
       const pct = (s.prob / Math.max(maxProb, 1) * 100).toFixed(1);
       const color = s.prob > 60 ? '#C0392B' : s.prob > 35 ? '#E67E22' : '#27AE60';
+      
+      const plTotal = Math.max(s.pl, s.op + s.perdido);
+      const wOp = plTotal > 0 ? (s.op / plTotal * 100) : 0;
+      const wPerdido = plTotal > 0 ? (s.perdido / plTotal * 100) : 0;
+      
       return `
-        <div class="line-bar-item">
-          <div class="line-bar-top">
-            <div class="line-bar-lbl">${s.ln.replace('LINEA','L').replace('L\u00cdNEA','L').substring(0,5)}</div>
-            <div class="line-bar-track"><div class="line-bar-fill" style="width:${pct}%;background:${color};"></div></div>
-            <div class="line-bar-pct" style="color:${color};">${s.prob.toFixed(1).replace('.',',')}%</div>
+        <div style="margin-bottom:7px;">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <div style="width:30px;font-size:9.5px;font-weight:800;color:#fff;flex-shrink:0;opacity:.9;">${s.ln.replace('LINEA','L').replace('L\u00cdNEA','L').substring(0,5)}</div>
+            <div style="flex:1;background:rgba(255,255,255,0.15);border-radius:3px;height:12px;overflow:hidden;">
+              <div style="width:${pct}%;background:${color};height:100%;border-radius:3px;opacity:0.9;"></div>
+            </div>
+            <div style="width:36px;text-align:right;font-size:9.5px;font-weight:800;color:${color};flex-shrink:0;">${s.prob.toFixed(1).replace('.',',')}%</div>
           </div>
-          <div class="line-hrs">
-            <span class="hrs-dot" style="background:rgba(100,180,255,0.85);"></span><span>${s.op.toFixed(0)}h</span>
-            <span style="opacity:.4;">/</span>
-            <span class="hrs-dot" style="background:rgba(255,255,255,0.25);"></span><span>${s.pl.toFixed(0)}h</span>
-            <span style="opacity:.4;">&middot;</span>
-            <span class="hrs-dot" style="background:rgba(255,80,60,0.85);"></span><span style="color:rgba(255,140,120,1);font-weight:700;">${s.perdido.toFixed(1)}h</span>
+          <div style="margin-top:3px;">
+            <div style="position:relative;height:5px;background:rgba(255,255,255,0.15);border-radius:2px;overflow:hidden;width:100%;max-width:100%;margin-bottom:2px;">
+              <div style="position:absolute;left:0;top:0;height:100%;width:${wOp}%;background:rgba(100,180,255,0.8);border-radius:2px;opacity:0.85;"></div>
+              <div style="position:absolute;right:0;top:0;height:100%;width:${wPerdido}%;background:rgba(255,80,60,0.85);border-radius:2px;opacity:0.8;"></div>
+            </div>
+            <div style="display:flex;gap:4px;align-items:center;">
+              <span style="width:5px;height:5px;background:rgba(100,180,255,0.8);border-radius:1px;display:inline-block;opacity:.85;flex-shrink:0;"></span>
+              <span style="font-size:6.5px;color:rgba(255,255,255,0.8);">${s.op.toFixed(1)}h</span>
+              <span style="font-size:6.5px;color:rgba(255,255,255,0.3);">/</span>
+              <span style="width:5px;height:5px;background:rgba(255,255,255,0.2);border-radius:1px;display:inline-block;flex-shrink:0;"></span>
+              <span style="font-size:6.5px;color:rgba(255,255,255,0.8);">${s.pl.toFixed(1)}h</span>
+              <span style="font-size:6.5px;color:rgba(255,255,255,0.3);">·</span>
+              <span style="width:5px;height:5px;background:rgba(255,80,60,0.85);border-radius:1px;display:inline-block;opacity:.8;flex-shrink:0;"></span>
+              <span style="font-size:6.5px;font-weight:700;color:rgba(255,140,120,1);">${s.perdido.toFixed(1)}h</span>
+            </div>
           </div>
         </div>`;
     }).join('');
 
-    const rankColors = ['rn1','rn2','rn3','rn4','rn5'];
-    const pKeyLowerCase = planta.toLowerCase();
-
+    const rankColors = ['#CC2222','#E65100','#F9A825','#5D6D7E','#95A5A6'];
     const filas = top5.map((e, i) => {
-      const probColor = e.prob > 60 ? '#b91c1c' : e.prob > 35 ? '#b45309' : '#047857';
+      const probColor = e.prob > 60 ? '#C0392B' : e.prob > 35 ? '#E67E22' : '#27AE60';
       const rankTop = i + 1;
       
       let accionStr = "-";
@@ -947,35 +936,53 @@ function renderResumen() {
       }
 
       return `
-        <div class="eq-rank-row">
-          <div class="eq-rank-num ${rankColors[i]}">${rankTop}</div>
-          <div class="eq-rank-name" title="${e.equipo}">${e.equipo}<span class="eq-rank-badge">${e.linea.substring(0,5)}</span></div>
-          <div class="eq-rank-accion" title="${accionStr}">${accionStr}</div>
-          <div class="eq-rank-kpi">
-            <span class="rval" style="color:${probColor};">${e.prob.toFixed(1)}%</span>
-            <span class="rsub">Prob. Falla</span>
+        <div style="display:grid;grid-template-columns:18px 1.6fr 82px 82px 1.8fr;gap:6px;align-items:center;padding:6px 0;border-bottom:1px solid #EAF0F8;">
+          <div style="width:18px;height:18px;border-radius:50%;background:${rankColors[i]};color:#fff;font-size:8px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${rankTop}</div>
+          <div style="font-size:10.5px;font-weight:700;color:#0D2C54;line-height:1.2;">
+            ${e.equipo}<span style="padding:1px 5px;border-radius:3px;font-size:7px;font-weight:700;background:#C0392B;color:#fff;margin-left:4px;vertical-align:middle;">${e.linea.substring(0,5)}</span>
           </div>
-          <div class="eq-rank-kpi">
-            <span class="rval" style="color:#1A5276;">${e.hrs.toFixed(1)}h</span>
-            <span class="rsub">${e.det} deten.</span>
+          <div style="text-align:center;background:#FEF0F0;border-radius:4px;padding:4px 3px;">
+            <div style="font-size:13px;font-weight:800;color:${probColor};line-height:1;">${e.prob.toFixed(1)}%</div>
+          </div>
+          <div style="text-align:center;background:#EEF4FF;border-radius:4px;padding:4px 3px;">
+            <div style="font-size:13px;font-weight:800;color:#1A5276;line-height:1;">${e.mtbf.toFixed(1)}h</div>
+          </div>
+          <div style="padding-left:6px;border-left:2px solid #EAF0F8;">
+            <div style="font-size:9.5px;color:#2C3E50;line-height:1.4;padding:1px 0;">${accionStr}</div>
           </div>
         </div>`;
     }).join('');
 
     html += `
-      <div class="plant-card">
+      <div class="fila-planta">
         <div class="plant-bar-col ${tema}">
-          <div><span class="plant-bar-title">${planta.toUpperCase()}</span></div>
-          <div class="plant-sub-lbl">Pb. Falla &middot; Hrs</div>
+          <div style="font-size:9px;font-weight:800;color:#fff;letter-spacing:.5px;margin-bottom:6px;display:flex;align-items:center;gap:6px;">
+            <span style="background:${temaPillColor};padding:3px 8px;border-radius:3px;font-size:9px;">${planta.toUpperCase()}</span>
+          </div>
+          <div style="font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,0.5);margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid rgba(255,255,255,0.15);">
+            Pb. Falla · Horas
+          </div>
+          
           ${barras}
-          <div class="plant-avg">
-            <div class="plant-avg-lbl">Pf. Promedio</div>
-            <div class="plant-avg-val">${avgProb.toFixed(1).replace('.',',')}%</div>
+          
+          <div style="margin-top:auto;text-align:center;padding:8px 0;">
+            <div style="font-size:8px;font-weight:700;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:.8px;margin-bottom:2px;">Pf. Promedio</div>
+            <div style="font-size:28px;font-weight:800;color:#fff;line-height:1;">${avgProb.toFixed(1).replace('.',',')}%</div>
           </div>
         </div>
-        <div class="plant-eq-col">
-          <h4>&#128680; Top Equipos Cr&iacute;ticos &mdash; ${planta}</h4>
-          ${top5.length ? filas : '<p style="color:var(--text-muted);font-size:0.85rem;padding:10px 0;">Sin detenciones en el per&iacute;odo.</p>'}
+        
+        <div style="width:1px;background:#DDE6F2;flex-shrink:0;"></div>
+        
+        <div style="flex:1;padding:10px 18px 10px 16px;display:flex;flex-direction:column;min-width:0;overflow:hidden;background:#ffffff;">
+          <div style="display:grid;grid-template-columns:18px 1.6fr 82px 82px 1.8fr;gap:6px;padding-bottom:5px;border-bottom:2px solid #0071CE;margin-bottom:2px;">
+            <div></div>
+            <div style="font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:#8899AA;">Equipo</div>
+            <div style="font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:#8899AA;text-align:center;">Pb. Falla</div>
+            <div style="font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:#8899AA;text-align:center;">MTBF</div>
+            <div style="font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:#8899AA;">Acciones Correctivas</div>
+          </div>
+          
+          ${top5.length ? filas : '<p style="color:var(--text-muted);font-size:0.9rem;padding:20px 0;">Sin detenciones críticas en el período.</p>'}
         </div>
       </div>`;
   });
