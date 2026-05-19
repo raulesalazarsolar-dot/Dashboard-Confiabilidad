@@ -102,7 +102,7 @@
             </div>
             <div style="padding: 20px; border-top: 1px solid var(--border);">
                 <button class="btn-export" onclick="descargarExcel()">⬇️ Exportar Data a Excel</button>
-                <div style="text-align:center; font-size:0.7rem; color:var(--text-muted); margin-top:15px; font-weight:600;">Actualizado: 19/05/2026 09:44</div>
+                <div style="text-align:center; font-size:0.7rem; color:var(--text-muted); margin-top:15px; font-weight:600;">Actualizado: 19/05/2026 10:00</div>
             </div>
         </div>
 
@@ -262,7 +262,7 @@
             eqMap[eqKey].tpop += d.tpo_perdido_eq;
         });
 
-        // --- APLICACIÓN EXACTA DE FÓRMULAS ---
+        // 3. Calcular KPIs usando el tiempo total acumulado de la línea
         tableDataFull = Object.values(eqMap).map(d => {
             let opTime = opTimeByLine[d.p + "|" + d.l] || 0;
             
