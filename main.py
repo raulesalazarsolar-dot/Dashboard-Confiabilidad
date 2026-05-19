@@ -567,7 +567,6 @@ function applyFilters() {
 
   // 1. Acumular tiempo operativo y planificado por línea
   let opTimeByLine = {};
-  let totalOperativoGlobal    = 0;
   let totalPlanificadoGlobal  = 0;
 
   currentLnData.forEach(d => {
@@ -575,7 +574,6 @@ function applyFilters() {
     if (!opTimeByLine[k]) opTimeByLine[k] = { op: 0, pl: 0 };
     opTimeByLine[k].op      += d.tpo_operativo_linea;
     opTimeByLine[k].pl      += d.tpo_plan_linea;
-    totalOperativoGlobal    += d.tpo_operativo_linea;
     totalPlanificadoGlobal  += d.tpo_plan_linea;
   });
 
@@ -611,7 +609,7 @@ function applyFilters() {
   document.getElementById('k_detenciones').innerText = sumFallasGlobal;
   document.getElementById('k_hrs').innerText         = sumPerdidoGlobal.toFixed(1);
   document.getElementById('k_plan').innerText        = totalPlanificadoGlobal.toFixed(1);
-  document.getElementById('k_oper').innerText        = totalOperativoGlobal.toFixed(1);
+  document.getElementById('k_oper').innerText        = Math.max(0, totalPlanificadoGlobal - sumPerdidoGlobal).toFixed(1);
   document.getElementById('k_mant').innerText        = mantGlobal.toFixed(1) + "%";
 
   drawCharts(sDesde, sHasta);
