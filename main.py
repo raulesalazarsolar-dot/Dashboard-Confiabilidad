@@ -406,14 +406,43 @@ body.theme-carnes .tab-btn.active { color: #A93226; border-bottom-color: #A93226
 .tab-panel { display: none; flex: 1; overflow: hidden; }
 .tab-panel.active { display: flex; }
 
-/* ── NUEVO DISEÑO RESUMEN (TIPO HTML ADJUNTO) ── */
-.resumen-panel { display:flex; flex-direction:column; padding: 15px; overflow-y: auto; background: #F4F6FA; width:100%; }
-.fila-planta { display:flex; flex:1; min-height:0; border-bottom:2px solid #DDE6F2; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.04); margin-bottom:15px; border-radius:5px; overflow:hidden;}
-.plant-bar-col { width: 220px; flex-shrink: 0; padding: 12px 14px; display: flex; flex-direction: column; }
-.plant-bar-col.tema-masas { background: #1A3A5C; }
-.plant-bar-col.tema-carnes { background: #4A0E0E; }
-.plant-bar-col.tema-dely { background: #2C4A3E; }
-.plant-bar-col.tema-molida { background: #4A2511; }
+/* ── NUEVO DISEÑO RESUMEN V3 (VERDE ABAJO, TOP 3, ACUMULADOS) ── */
+.resumen-panel { display:flex; flex-direction:column; padding: 20px 30px; overflow-y: auto; background: #F4F6FA; width:100%; gap: 25px;}
+.fila-planta-v3 { display:flex; flex-direction:column; background: #fff; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); overflow:hidden;}
+.top-section { padding: 20px 25px; }
+.plant-header { display:flex; align-items:center; gap: 12px; margin-bottom: 20px; }
+.plant-badge { color:#fff; padding:5px 12px; border-radius:4px; font-size:12px; font-weight:800; letter-spacing:1px; text-transform:uppercase; }
+.plant-header h3 { margin:0; font-size:16px; color:var(--primary); font-weight:800; }
+.grid-table { width: 100%; }
+.grid-th { display:grid; grid-template-columns: 25px 2fr 90px 90px 85px 85px 3fr; gap:10px; padding-bottom:8px; border-bottom:2px solid var(--accent); margin-bottom:5px; }
+.grid-th > div { font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:.7px; color:var(--text-muted); align-self: end; line-height: 1.2;}
+.grid-th .center { text-align: center; }
+.grid-th small { font-size: 7.5px; font-weight: 600; opacity: 0.8; display: block; margin-top: 2px;}
+.grid-tr { display:grid; grid-template-columns: 25px 2fr 90px 90px 85px 85px 3fr; gap:10px; align-items:center; padding:10px 0; border-bottom:1px solid var(--border); }
+.grid-tr:last-child { border-bottom:none; }
+.rank-circle { width:22px; height:22px; border-radius:50%; color:#fff; font-size:10px; font-weight:800; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.eq-name { font-size:12px; font-weight:700; color:var(--primary); line-height:1.2;}
+.line-badge { padding:2px 6px; border-radius:4px; font-size:8px; font-weight:800; background:var(--danger); color:#fff; margin-left:6px; vertical-align:middle; }
+.stat-box { text-align:center; border-radius:4px; padding:6px 4px; display:flex; flex-direction:column; justify-content:center; align-items:center; }
+.stat-val { font-size:14px; font-weight:800; line-height:1; }
+.stat-trend { font-size:9px; font-weight:800; margin-top: 3px; display:flex; align-items:center; gap:2px; }
+.trend-up { color: #C0392B; } /* Empeoró Falla */
+.trend-dn { color: #27AE60; } /* Mejoró Falla */
+.trend-neu { color: #95A5A6; }
+.bg-red-light { background: #FEF0F0; }
+.bg-blue-light { background: #EEF4FF; }
+.bg-gray-light { background: #F8FAFD; }
+
+/* Bottom section (Bars) */
+.bottom-section { padding: 15px 25px; color: #fff; }
+.bottom-section.tema-masas { background: #1A3A5C; }
+.bottom-section.tema-carnes { background: #4A0E0E; }
+.bottom-section.tema-dely { background: #2C4A3E; }
+.bottom-section.tema-molida { background: #4A2511; }
+.bottom-title { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:1px; color:rgba(255,255,255,0.7); margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;}
+.bottom-title strong { font-size: 16px; color:#fff; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 4px;}
+.lines-grid { display: flex; flex-wrap: wrap; gap: 20px; }
+.line-item { flex: 1; min-width: 220px; }
 </style>
 </head>
 <body>
@@ -834,6 +863,25 @@ function renderResumen() {
   const el = document.getElementById('resumen_content');
   if (!currentLnData.length) { el.innerHTML = '<p style="padding:30px;color:var(--text-muted);">Sin datos para el rango seleccionado.</p>'; return; }
 
+  const sDesde = parseInt(document.getElementById('f_sem_desde').value);
+  const sHasta = parseInt(document.getElementById('f_sem_hasta').value);
+  const sHastaPrev = sHasta > sDesde ? sHasta - 1 : sDesde;
+
+  const fPla = document.getElementById('f_planta').value;
+  const fLin = document.getElementById('f_linea').value;
+
+  const prevFilter = d => {
+    if (isCarnesTheme ? d.super_planta !== 'Carnes' : d.super_planta !== 'Masas') return false;
+    if (d.semana < sDesde || d.semana > sHastaPrev) return false;
+    if (fPla !== 'ALL' && d.planta !== fPla) return false;
+    if (fLin !== 'ALL' && d.linea  !== fLin) return false;
+    return true;
+  };
+
+  const prevLnData = recordsLn.filter(prevFilter);
+  const prevEqData = recordsEq.filter(prevFilter);
+
+  // AGRUPACIÓN ACTUAL
   const lnByPlanta = {};
   currentLnData.forEach(d => {
     if (!lnByPlanta[d.planta]) lnByPlanta[d.planta] = {};
@@ -849,6 +897,24 @@ function renderResumen() {
     if (!eqByPlanta[d.planta][k]) eqByPlanta[d.planta][k] = {linea:d.linea, equipo:d.equipo, det:0, hrs:0};
     eqByPlanta[d.planta][k].det += d.detenciones;
     eqByPlanta[d.planta][k].hrs += d.tpo_perdido_eq;
+  });
+
+  // AGRUPACIÓN PERIODO ANTERIOR
+  const lnByPlantaPrev = {};
+  prevLnData.forEach(d => {
+    if (!lnByPlantaPrev[d.planta]) lnByPlantaPrev[d.planta] = {};
+    if (!lnByPlantaPrev[d.planta][d.linea]) lnByPlantaPrev[d.planta][d.linea] = {op:0, pl:0};
+    lnByPlantaPrev[d.planta][d.linea].op += d.tpo_operativo_linea;
+    lnByPlantaPrev[d.planta][d.linea].pl += d.tpo_plan_linea;
+  });
+
+  const eqByPlantaPrev = {};
+  prevEqData.forEach(d => {
+    if (!eqByPlantaPrev[d.planta]) eqByPlantaPrev[d.planta] = {};
+    const k = d.linea + '|||' + d.equipo;
+    if (!eqByPlantaPrev[d.planta][k]) eqByPlantaPrev[d.planta][k] = {linea:d.linea, equipo:d.equipo, det:0, hrs:0};
+    eqByPlantaPrev[d.planta][k].det += d.detenciones;
+    eqByPlantaPrev[d.planta][k].hrs += d.tpo_perdido_eq;
   });
 
   let html = '';
@@ -883,52 +949,64 @@ function renderResumen() {
     const avgProb = lineaStats.length ? lineaStats.reduce((s,x)=>s+x.prob,0)/lineaStats.length : 0;   
     const maxProb = Math.max(...lineaStats.map(x => x.prob), 1);
 
-    const top5 = eqs.map(e => {
+    // LIMITAR A TOP 3
+    const top3 = eqs.map(e => {
       const lnOp  = lineas[e.linea]?.op || 0;
       const mtbf  = e.det > 0 ? lnOp / e.det : 0;
       const mttr  = e.det > 0 ? e.hrs / e.det : 0;
       const prob  = mtbf > 0 ? (1 - Math.exp(-120/mtbf))*100 : (e.det>0?100:0);
-      return { ...e, prob, mtbf, mttr };
-    }).filter(e => e.det > 0).sort((a,b)=>b.prob-a.prob).slice(0,5);
+
+      // Calcular previos para comparativa
+      let detPrev = 0, hrsPrev = 0, opPrev = 0;
+      if (eqByPlantaPrev[planta] && eqByPlantaPrev[planta][e.linea + '|||' + e.equipo]) {
+          detPrev = eqByPlantaPrev[planta][e.linea + '|||' + e.equipo].det;
+      }
+      if (lnByPlantaPrev[planta] && lnByPlantaPrev[planta][e.linea]) {
+          opPrev = lnByPlantaPrev[planta][e.linea].op;
+      }
+      const mtbfPrev = detPrev > 0 ? opPrev / detPrev : 0;
+      const probPrev = mtbfPrev > 0 ? (1 - Math.exp(-120/mtbfPrev))*100 : (detPrev>0?100:0);
+
+      return { ...e, prob, mtbf, mttr, probPrev, mtbfPrev };
+    }).filter(e => e.det > 0).sort((a,b)=>b.prob-a.prob).slice(0,3);
 
     const barras = lineaStats.map((s,i) => {
       const pct = (s.prob / Math.max(maxProb, 1) * 100).toFixed(1);
       const color = s.prob > 60 ? '#C0392B' : s.prob > 35 ? '#E67E22' : '#27AE60';
-      
       const plTotal = Math.max(s.pl, s.op + s.perdido);
       const wOp = plTotal > 0 ? (s.op / plTotal * 100) : 0;
       const wPerdido = plTotal > 0 ? (s.perdido / plTotal * 100) : 0;
       
       return `
-        <div style="margin-bottom:7px;">
+        <div class="line-item">
           <div style="display:flex;align-items:center;gap:6px;">
-            <div style="width:30px;font-size:9.5px;font-weight:800;color:#fff;flex-shrink:0;opacity:.9;">${s.ln.replace('LINEA','L').replace('L\u00cdNEA','L').substring(0,5)}</div>
+            <div style="width:40px;font-size:10px;font-weight:800;color:#fff;flex-shrink:0;opacity:.9;">${s.ln.replace('LINEA','L').replace('L\u00cdNEA','L').substring(0,5)}</div>
             <div style="flex:1;background:rgba(255,255,255,0.15);border-radius:3px;height:12px;overflow:hidden;">
               <div style="width:${pct}%;background:${color};height:100%;border-radius:3px;opacity:0.9;"></div>
             </div>
-            <div style="width:36px;text-align:right;font-size:9.5px;font-weight:800;color:${color};flex-shrink:0;">${s.prob.toFixed(1).replace('.',',')}%</div>
+            <div style="width:40px;text-align:right;font-size:10px;font-weight:800;color:${color};flex-shrink:0;">${s.prob.toFixed(1).replace('.',',')}%</div>
           </div>
-          <div style="margin-top:3px;">
-            <div style="position:relative;height:5px;background:rgba(255,255,255,0.15);border-radius:2px;overflow:hidden;width:100%;max-width:100%;margin-bottom:2px;">
+          <div style="margin-top:4px;">
+            <div style="position:relative;height:6px;background:rgba(255,255,255,0.15);border-radius:2px;overflow:hidden;width:100%;max-width:100%;margin-bottom:4px;">
               <div style="position:absolute;left:0;top:0;height:100%;width:${wOp}%;background:rgba(100,180,255,0.8);border-radius:2px;opacity:0.85;"></div>
               <div style="position:absolute;right:0;top:0;height:100%;width:${wPerdido}%;background:rgba(255,80,60,0.85);border-radius:2px;opacity:0.8;"></div>
             </div>
-            <div style="display:flex;gap:4px;align-items:center;">
-              <span style="width:5px;height:5px;background:rgba(100,180,255,0.8);border-radius:1px;display:inline-block;opacity:.85;flex-shrink:0;"></span>
-              <span style="font-size:6.5px;color:rgba(255,255,255,0.8);">${s.op.toFixed(1)}h</span>
-              <span style="font-size:6.5px;color:rgba(255,255,255,0.3);">/</span>
-              <span style="width:5px;height:5px;background:rgba(255,255,255,0.2);border-radius:1px;display:inline-block;flex-shrink:0;"></span>
-              <span style="font-size:6.5px;color:rgba(255,255,255,0.8);">${s.pl.toFixed(1)}h</span>
-              <span style="font-size:6.5px;color:rgba(255,255,255,0.3);">·</span>
-              <span style="width:5px;height:5px;background:rgba(255,80,60,0.85);border-radius:1px;display:inline-block;opacity:.8;flex-shrink:0;"></span>
-              <span style="font-size:6.5px;font-weight:700;color:rgba(255,140,120,1);">${s.perdido.toFixed(1)}h</span>
+            <div style="display:flex;gap:5px;align-items:center;">
+              <span style="width:6px;height:6px;background:rgba(100,180,255,0.8);border-radius:1px;display:inline-block;opacity:.85;flex-shrink:0;"></span>
+              <span style="font-size:8px;color:rgba(255,255,255,0.8);">${s.op.toFixed(1)}h</span>
+              <span style="font-size:8px;color:rgba(255,255,255,0.3);">/</span>
+              <span style="width:6px;height:6px;background:rgba(255,255,255,0.2);border-radius:1px;display:inline-block;flex-shrink:0;"></span>
+              <span style="font-size:8px;color:rgba(255,255,255,0.8);">${s.pl.toFixed(1)}h</span>
+              <span style="font-size:8px;color:rgba(255,255,255,0.3);">·</span>
+              <span style="width:6px;height:6px;background:rgba(255,80,60,0.85);border-radius:1px;display:inline-block;opacity:.8;flex-shrink:0;"></span>
+              <span style="font-size:8px;font-weight:700;color:rgba(255,140,120,1);">${s.perdido.toFixed(1)}h</span>
             </div>
           </div>
         </div>`;
     }).join('');
 
-    const rankColors = ['#CC2222','#E65100','#F9A825','#5D6D7E','#95A5A6'];
-    const filas = top5.map((e, i) => {
+    const rankColors = ['#CC2222','#E65100','#F9A825'];
+    const filas = top3.map((e, i) => {
       const probColor = e.prob > 60 ? '#C0392B' : e.prob > 35 ? '#E67E22' : '#27AE60';
       const rankTop = i + 1;
       
@@ -942,54 +1020,86 @@ function renderResumen() {
         }
       }
 
+      // Lógica de flechas para Pb. Falla
+      let probDif = e.prob - e.probPrev;
+      let probArrow = "";
+      if (e.probPrev > 0 || e.mtbfPrev > 0) {
+          if (probDif > 0.1) probArrow = `<span class="stat-trend trend-up">🔺 +${probDif.toFixed(1)}pp</span>`;
+          else if (probDif < -0.1) probArrow = `<span class="stat-trend trend-dn">🔻 ${probDif.toFixed(1)}pp</span>`;
+          else probArrow = `<span class="stat-trend trend-neu">▬ 0.0pp</span>`;
+      } else {
+          probArrow = `<span class="stat-trend trend-neu">N/A Ant.</span>`;
+      }
+
+      // Lógica de flechas para MTBF
+      let mtbfDif = e.mtbf - e.mtbfPrev;
+      let mtbfArrow = "";
+      if (e.probPrev > 0 || e.mtbfPrev > 0) {
+          if (mtbfDif > 0.1) mtbfArrow = `<span class="stat-trend trend-dn">🔺 +${mtbfDif.toFixed(1)}h</span>`;
+          else if (mtbfDif < -0.1) mtbfArrow = `<span class="stat-trend trend-up">🔻 ${mtbfDif.toFixed(1)}h</span>`;
+          else mtbfArrow = `<span class="stat-trend trend-neu">▬ 0.0h</span>`;
+      } else {
+          mtbfArrow = `<span class="stat-trend trend-neu">N/A Ant.</span>`;
+      }
+
       return `
-        <div style="display:grid;grid-template-columns:18px 1.6fr 82px 82px 1.8fr;gap:6px;align-items:center;padding:6px 0;border-bottom:1px solid #EAF0F8;">
-          <div style="width:18px;height:18px;border-radius:50%;background:${rankColors[i]};color:#fff;font-size:8px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${rankTop}</div>
-          <div style="font-size:10.5px;font-weight:700;color:#0D2C54;line-height:1.2;">
-            ${e.equipo}<span style="padding:1px 5px;border-radius:3px;font-size:7px;font-weight:700;background:#C0392B;color:#fff;margin-left:4px;vertical-align:middle;">${e.linea.substring(0,5)}</span>
+        <div class="grid-tr">
+          <div class="rank-circle" style="background:${rankColors[i]}">${rankTop}</div>
+          <div class="eq-name">
+            ${e.equipo}<span class="line-badge">${e.linea.substring(0,5)}</span>
           </div>
-          <div style="text-align:center;background:#FEF0F0;border-radius:4px;padding:4px 3px;">
-            <div style="font-size:13px;font-weight:800;color:${probColor};line-height:1;">${e.prob.toFixed(1)}%</div>
+          
+          <div class="stat-box bg-red-light">
+            <span class="stat-val" style="color:${probColor}">${e.prob.toFixed(1)}%</span>
+            ${probArrow}
           </div>
-          <div style="text-align:center;background:#EEF4FF;border-radius:4px;padding:4px 3px;">
-            <div style="font-size:13px;font-weight:800;color:#1A5276;line-height:1;">${e.mtbf.toFixed(1)}h</div>
+          <div class="stat-box bg-gray-light">
+            <span class="stat-val" style="color:#7F8C8D">${e.probPrev.toFixed(1)}%</span>
           </div>
-          <div style="padding-left:6px;border-left:2px solid #EAF0F8;">
-            <div style="font-size:9.5px;color:#2C3E50;line-height:1.4;padding:1px 0;">${accionStr}</div>
+
+          <div class="stat-box bg-blue-light">
+            <span class="stat-val" style="color:#1A5276">${e.mtbf.toFixed(1)}h</span>
+            ${mtbfArrow}
+          </div>
+          <div class="stat-box bg-gray-light">
+            <span class="stat-val" style="color:#7F8C8D">${e.mtbfPrev.toFixed(1)}h</span>
+          </div>
+
+          <div style="padding-left:10px; border-left:2px solid #EAF0F8;">
+            <div style="font-size:10px; color:#2C3E50; line-height:1.4;">${accionStr}</div>
           </div>
         </div>`;
     }).join('');
 
     html += `
-      <div class="fila-planta">
-        <div class="plant-bar-col ${tema}">
-          <div style="font-size:9px;font-weight:800;color:#fff;letter-spacing:.5px;margin-bottom:6px;display:flex;align-items:center;gap:6px;">
-            <span style="background:${temaPillColor};padding:3px 8px;border-radius:3px;font-size:9px;">${planta.toUpperCase()}</span>
+      <div class="fila-planta-v3">
+        <div class="top-section">
+          <div class="plant-header">
+            <span class="plant-badge" style="background:${temaPillColor}">${planta.toUpperCase()}</span>
+            <h3>Top 3 Equipos Críticos</h3>
           </div>
-          <div style="font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,0.5);margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid rgba(255,255,255,0.15);">
-            Pb. Falla · Horas
-          </div>
-          
-          ${barras}
-          
-          <div style="margin-top:auto;text-align:center;padding:8px 0;">
-            <div style="font-size:8px;font-weight:700;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:.8px;margin-bottom:2px;">Pf. Promedio</div>
-            <div style="font-size:28px;font-weight:800;color:#fff;line-height:1;">${avgProb.toFixed(1).replace('.',',')}%</div>
+          <div class="grid-table">
+            <div class="grid-th">
+              <div>#</div>
+              <div>EQUIPO</div>
+              <div class="center">PB. FALLA<small>Sem ${sDesde} a ${sHasta}</small></div>
+              <div class="center" style="opacity:0.6;">PB. FALLA (Ant.)<small>Sem ${sDesde} a ${sHastaPrev}</small></div>
+              <div class="center">MTBF<small>Sem ${sDesde} a ${sHasta}</small></div>
+              <div class="center" style="opacity:0.6;">MTBF (Ant.)<small>Sem ${sDesde} a ${sHastaPrev}</small></div>
+              <div>ACCIONES CORRECTIVAS</div>
+            </div>
+            ${top3.length ? filas : '<p style="color:var(--text-muted);font-size:0.9rem;padding:15px 0;">Sin detenciones críticas en el período.</p>'}
           </div>
         </div>
-        
-        <div style="width:1px;background:#DDE6F2;flex-shrink:0;"></div>
-        
-        <div style="flex:1;padding:10px 18px 10px 16px;display:flex;flex-direction:column;min-width:0;overflow:hidden;background:#ffffff;">
-          <div style="display:grid;grid-template-columns:18px 1.6fr 82px 82px 1.8fr;gap:6px;padding-bottom:5px;border-bottom:2px solid #0071CE;margin-bottom:2px;">
-            <div></div>
-            <div style="font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:#8899AA;">Equipo</div>
-            <div style="font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:#8899AA;text-align:center;">Pb. Falla</div>
-            <div style="font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:#8899AA;text-align:center;">MTBF</div>
-            <div style="font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:#8899AA;">Acciones Correctivas</div>
+
+        <div class="bottom-section ${tema}">
+          <div class="bottom-title">
+            <span>Estado por Línea de Producción</span>
+            <span>Promedio Planta: <strong>${avgProb.toFixed(1).replace('.',',')}%</strong></span>
           </div>
-          
-          ${top5.length ? filas : '<p style="color:var(--text-muted);font-size:0.9rem;padding:20px 0;">Sin detenciones críticas en el período.</p>'}
+          <div class="lines-grid">
+            ${barras}
+          </div>
         </div>
       </div>`;
   });
