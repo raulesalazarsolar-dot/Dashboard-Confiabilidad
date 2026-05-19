@@ -2,6 +2,7 @@ import os
 import json
 import math
 import shutil
+import re
 import pandas as pd
 import gdown
 from datetime import datetime
@@ -161,7 +162,10 @@ def procesar_datos_confiabilidad():
             df_det = pd.read_excel(excel, sheet_name=hoja_det)
             df_tpo = pd.read_excel(excel, sheet_name=hoja_tpo)
 
-            planta_nombre = archivo_nombre.replace("Confiabilidad ", " ").replace(" .xlsx", "").strip()
+            # Limpieza exhaustiva del nombre de la planta (quita "Confiabilidad" y ".xlsx")
+            planta_nombre = re.sub(r'(?i)confiabilidad', '', archivo_nombre)
+            planta_nombre = re.sub(r'(?i)\.xlsx', '', planta_nombre).strip()
+            
             super_planta = "Carnes" if "carne" in planta_nombre.lower() else "Masas"
 
             # --- LIMPIEZA DETENCIONES ---
@@ -946,7 +950,14 @@ function renderResumen() {
       return { ln, op: d.op, pl: d.pl, perdido, prob };
     }).sort((a,b) => b.prob - a.prob);
 
-    const avgProb = lineaStats.length ? lineaStats.reduce((s,x)=>s+x.prob,0)/lineaStats.length : 0;   
+    // CÁLCULO PROMEDIO PLANTA CORREGIDO (Promedio de todos los Equipos)
+    const allEqStats = eqs.map(e => {
+        const lnOp = lineas[e.linea]?.op || 0;
+        const mtbf = e.det > 0 ? lnOp / e.det : 0;
+        return mtbf > 0 ? (1 - Math.exp(-120/mtbf))*100 : (e.det > 0 ? 100 : 0);
+    });
+    const avgProb = allEqStats.length ? allEqStats.reduce((s, p) => s + p, 0) / allEqStats.length : 0;   
+    
     const maxProb = Math.max(...lineaStats.map(x => x.prob), 1);
 
     // LIMITAR A TOP 3
@@ -1095,7 +1106,7 @@ function renderResumen() {
         <div class="bottom-section ${tema}">
           <div class="bottom-title">
             <span>Estado por Línea de Producción</span>
-            <span>Promedio Planta: <strong>${avgProb.toFixed(1).replace('.',',')}%</strong></span>
+            <span>PROMEDIO PLANTA: <strong>${avgProb.toFixed(1).replace('.',',')}%</strong></span>
           </div>
           <div class="lines-grid">
             ${barras}
