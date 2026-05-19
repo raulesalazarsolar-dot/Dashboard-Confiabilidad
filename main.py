@@ -44,18 +44,17 @@ def buscar_tiempo_detencion_hr(df):
         if 'detencion' in str(c).lower() and 'hr' in str(c).lower(): return c
     return None
 
-def buscar_columna_tiempo_base(df):
+def buscar_columna_tiempo_oper(df):
     cols_lower = [str(c).lower().replace('  ', ' ').strip() for c in df.columns]
-    
-    # 1. Prioridad: Tiempo Operativo (Masas/Panadería)
     for i, c in enumerate(cols_lower):
-        if 'operativo' in c and 'hr' in c: return df.columns[i], 'operativo'
-        
-    # 2. Fallback: Tiempo Planificado/Disponible (Carnes)
+        if 'operativo' in c and 'hr' in c: return df.columns[i]
+    return None
+
+def buscar_columna_tiempo_plan(df):
+    cols_lower = [str(c).lower().replace('  ', ' ').strip() for c in df.columns]
     for i, c in enumerate(cols_lower):
-        if ('plan' in c or 'disponible' in c) and 'hr' in c: return df.columns[i], 'planificado'
-        
-    return None, None
+        if ('plan' in c or 'disponible' in c) and 'hr' in c: return df.columns[i]
+    return None
 
 # ==========================================
 # 3. EXTRACCIÓN Y TRANSFORMACIÓN (ETL)
@@ -120,17 +119,27 @@ def procesar_datos_confiabilidad():
                 tpo_perdido_linea=('Hrs_Perdidas', 'sum')
             ).reset_index()
             
-            # --- LIMPIEZA TIEMPOS PLANIFICADOS ---
+            agrup_det_eq = df_det.groupby(['Linea_Clean', 'Semana_Clean', 'Equipo_Clean']).agg(
+                detenciones=('Equipo_Clean', 'count'),
+                tpo_perdido_eq=('Hrs_Perdidas', 'sum')
+            ).reset_index()
+            
+            # --- LIMPIEZA TIEMPOS PLANIFICADOS Y OPERATIVOS ---
             col_semana_tpo = buscar_columna_semana(df_tpo)
             col_linea_tpo = buscar_columna_linea(df_tpo)
-            col_tiempo_base, tipo_tiempo = buscar_columna_tiempo_base(df_tpo)
+            col_tpo_oper = buscar_columna_tiempo_oper(df_tpo)
+            col_tpo_plan = buscar_columna_tiempo_plan(df_tpo)
             
-            if not all([col_semana_tpo, col_linea_tpo, col_tiempo_base]):
+            if not all([col_semana_tpo, col_linea_tpo]) or (not col_tpo_oper and not col_tpo_plan):
                 print(f"   ❌ Faltan columnas de tiempo en {archivo_nombre}. Saltando...")
                 continue
 
             df_tpo = df_tpo.dropna(subset=[col_linea_tpo, col_semana_tpo])
-            df_tpo['Hrs_Base'] = pd.to_numeric(df_tpo[col_tiempo_base], errors='coerce').fillna(0)
+            
+            # Capturar ambas horas si existen
+            df_tpo['Hrs_Oper'] = pd.to_numeric(df_tpo[col_tpo_oper], errors='coerce').fillna(0) if col_tpo_oper else 0
+            df_tpo['Hrs_Plan'] = pd.to_numeric(df_tpo[col_tpo_plan], errors='coerce').fillna(0) if col_tpo_plan else 0
+            
             df_tpo['Linea_Clean'] = df_tpo[col_linea_tpo].astype(str).str.replace('  ', ' ').str.strip().str.upper()
             
             df_tpo['Semana_Clean'] = df_tpo[col_semana_tpo].astype(str).str.replace(r'[^\d]', '', regex=True)
@@ -142,29 +151,38 @@ def procesar_datos_confiabilidad():
             df_tpo = df_tpo[~((df_tpo['Linea_Clean'].str.contains('L4', na=False)) & (df_tpo['Semana_Clean'] < 19))]
             
             agrup_tpo_linea = df_tpo.groupby(['Linea_Clean', 'Semana_Clean']).agg(
-                tpo_base_linea=('Hrs_Base', 'sum')
+                tpo_operativo_linea=('Hrs_Oper', 'sum'),
+                tpo_plan_linea=('Hrs_Plan', 'sum')
             ).reset_index()
             
             # --- CRUCE MAESTRO ---
             linea_merged = pd.merge(agrup_tpo_linea, agrup_det_linea, on=['Linea_Clean', 'Semana_Clean'], how='outer')
             linea_merged['tpo_perdido_linea'] = linea_merged.get('tpo_perdido_linea', pd.Series([0]*len(linea_merged))).fillna(0)
-            linea_merged['tpo_base_linea'] = linea_merged['tpo_base_linea'].fillna(0)
+            linea_merged['tpo_operativo_linea'] = linea_merged.get('tpo_operativo_linea', pd.Series([0]*len(linea_merged))).fillna(0)
+            linea_merged['tpo_plan_linea'] = linea_merged.get('tpo_plan_linea', pd.Series([0]*len(linea_merged))).fillna(0)
             
-            if tipo_tiempo == 'operativo':
-                linea_merged['tpo_operativo_linea'] = linea_merged['tpo_base_linea']
-            else:
-                linea_merged['tpo_operativo_linea'] = (linea_merged['tpo_base_linea'] - linea_merged['tpo_perdido_linea']).clip(lower=0)
+            # Reconciliación de tiempos faltantes
+            for idx, row in linea_merged.iterrows():
+                plan = row['tpo_plan_linea']
+                oper = row['tpo_operativo_linea']
+                perdido = row['tpo_perdido_linea']
+                
+                if oper == 0 and plan > 0:
+                    linea_merged.at[idx, 'tpo_operativo_linea'] = max(0, plan - perdido)
+                elif plan == 0 and oper > 0:
+                    linea_merged.at[idx, 'tpo_plan_linea'] = oper + perdido
             
             # 🧠 MAPEO COHERENTE: HERENCIA DE TIEMPOS PARA ENVASADO (MULTIVAC / VARIOVAC) 🧠
             tiempos_lineas_madre = {}
             for idx, row_lm in linea_merged.iterrows():
                 l_str = str(row_lm['Linea_Clean']).upper()
                 sem = row_lm['Semana_Clean']
-                tpo = row_lm['tpo_operativo_linea']
-                if tpo > 0:
+                tpo_op = row_lm['tpo_operativo_linea']
+                tpo_pl = row_lm['tpo_plan_linea']
+                if tpo_op > 0:
                     for pref in ['L1', 'L2', 'L3', 'L4', 'L5']:
                         if pref in l_str:
-                            tiempos_lineas_madre[(pref, sem)] = tpo
+                            tiempos_lineas_madre[(pref, sem)] = {'op': tpo_op, 'pl': tpo_pl}
 
             for idx, row_lm in linea_merged.iterrows():
                 l_str = str(row_lm['Linea_Clean']).upper()
@@ -176,7 +194,8 @@ def procesar_datos_confiabilidad():
                     elif 'MULTIVAC 3' in l_str or 'M3' in l_str: target_key = 'L3'
                     
                     if target_key and (target_key, sem) in tiempos_lineas_madre:
-                        linea_merged.at[idx, 'tpo_operativo_linea'] = tiempos_lineas_madre[(target_key, sem)]
+                        linea_merged.at[idx, 'tpo_operativo_linea'] = tiempos_lineas_madre[(target_key, sem)]['op']
+                        linea_merged.at[idx, 'tpo_plan_linea'] = tiempos_lineas_madre[(target_key, sem)]['pl']
             
             for _, row in linea_merged.iterrows():
                 datos_lineas.append({
@@ -184,10 +203,11 @@ def procesar_datos_confiabilidad():
                     "planta": planta_nombre,
                     "linea": row['Linea_Clean'],
                     "semana": int(row['Semana_Clean']),
-                    "tpo_operativo_linea": float(row.get('tpo_operativo_linea', 0))
+                    "tpo_operativo_linea": float(row.get('tpo_operativo_linea', 0)),
+                    "tpo_plan_linea": float(row.get('tpo_plan_linea', 0))
                 })
 
-            # Conservamos los eventos atómicos para el desglose (Drill-down) en el Dashboard
+            # Conservamos los eventos atómicos para el desglose (Drill-down)
             for _, row in df_det.iterrows():
                 datos_equipos.append({
                     "super_planta": super_planta,
@@ -259,13 +279,15 @@ def generar_html_moderno(db_json):
         .btn-export:hover { background: var(--success); color: white; }
         
         .content { flex: 1; padding: 30px; overflow-y: auto; display: flex; flex-direction: column; gap: 25px; }
-        .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; }
-        .kpi-card { background: var(--surface); padding: 20px; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 2px 4px rgba(0,0,0,0.02); display: flex; flex-direction: column; gap: 5px; position: relative; overflow: hidden; }
+        /* Grid ajustado a 6 KPIs */
+        .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 15px; }
+        .kpi-card { background: var(--surface); padding: 15px; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 2px 4px rgba(0,0,0,0.02); display: flex; flex-direction: column; gap: 5px; position: relative; overflow: hidden; }
         .kpi-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--accent); }
         .kpi-card.c-red::before { background: var(--danger); }
         .kpi-card.c-green::before { background: var(--success); }
-        .kpi-card span { font-size: 0.8rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; }
-        .kpi-card h3 { margin: 0; font-size: 2rem; color: var(--secondary); font-weight: 800; }
+        .kpi-card.c-warn::before { background: var(--warning); }
+        .kpi-card span { font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; }
+        .kpi-card h3 { margin: 0; font-size: 1.8rem; color: var(--secondary); font-weight: 800; }
         
         .charts-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); gap: 25px; }
         .chart-container { background: var(--surface); padding: 20px; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 2px 4px rgba(0,0,0,0.02); height: 350px; display: flex; flex-direction: column; }
@@ -288,7 +310,6 @@ def generar_html_moderno(db_json):
         .b-ok { background: #d1fae5; color: #047857; }
         .b-warn { background: #fef3c7; color: #b45309; }
         .b-danger { background: #fee2e2; color: #b91c1c; }
-        .b-critico { background: #ffedd5; color: #ea580c; border: 1px solid #ffd8a8; }
 
         /* --- ESTILOS MODAL DETALLES --- */
         .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(5px); display: none; justify-content: center; align-items: center; z-index: 100; padding: 20px; }
@@ -345,11 +366,11 @@ def generar_html_moderno(db_json):
 
         <div class="content">
             <div class="kpi-row">
-                <div class="kpi-card">
+                <div class="kpi-card c-red">
                     <span>Equipos con Fallas</span>
                     <h3 id="k_equipos">0</h3>
                 </div>
-                <div class="kpi-card c-green">
+                <div class="kpi-card c-red">
                     <span>Detenciones MTTO</span>
                     <h3 id="k_detenciones">0</h3>
                 </div>
@@ -357,7 +378,15 @@ def generar_html_moderno(db_json):
                     <span>Tpo. Perdido Total (Hrs)</span>
                     <h3 id="k_hrs">0.0</h3>
                 </div>
-                <div class="kpi-card">
+                <div class="kpi-card c-green">
+                    <span>Tiempo Planificado</span>
+                    <h3 id="k_plan">0.0</h3>
+                </div>
+                <div class="kpi-card c-green">
+                    <span>Tiempo de Operación</span>
+                    <h3 id="k_oper">0.0</h3>
+                </div>
+                <div class="kpi-card c-warn">
                     <span>Mantenibilidad Global (M)</span>
                     <h3 id="k_mant">0%</h3>
                 </div>
@@ -504,13 +533,21 @@ def generar_html_moderno(db_json):
             return true;
         });
 
-        // 1. Acumular Tiempo Operativo Completo por Línea
+        // 1. Acumular Tiempo Operativo y Planificado Completo por Línea
         let opTimeByLine = {};
         let totalOperativoGlobal = 0;
+        let totalPlanificadoGlobal = 0;
+        
         currentLnData.forEach(d => {
             let k = d.planta + "|" + d.linea;
-            opTimeByLine[k] = (opTimeByLine[k] || 0) + d.tpo_operativo_linea;
+            if(!opTimeByLine[k]) {
+                opTimeByLine[k] = { op: 0, pl: 0 };
+            }
+            opTimeByLine[k].op += d.tpo_operativo_linea;
+            opTimeByLine[k].pl += d.tpo_plan_linea;
+            
             totalOperativoGlobal += d.tpo_operativo_linea;
+            totalPlanificadoGlobal += d.tpo_plan_linea;
         });
 
         // 2. Acumular Detenciones, Horas y agrupar el historial atómico
@@ -532,7 +569,7 @@ def generar_html_moderno(db_json):
 
         // 3. Mapeo estructurado de KPIs
         tableDataFull = Object.values(eqMap).map(d => {
-            let opTime = opTimeByLine[d.p + "|" + d.l] || 0;
+            let opTime = opTimeByLine[d.p + "|" + d.l] ? opTimeByLine[d.p + "|" + d.l].op : 0;
             
             let mtbf = d.det > 0 ? (opTime / d.det) : 0;
             let mttr = d.det > 0 ? (d.tpop / d.det) : 0;
@@ -549,13 +586,14 @@ def generar_html_moderno(db_json):
         let sumPerdidoGlobal = tableDataFull.reduce((s, d) => s + d.tpop, 0);
         let sumFallasGlobal = tableDataFull.reduce((s, d) => s + d.det, 0);
         
-        let mtbfGlobal = sumFallasGlobal > 0 ? (totalOperativoGlobal / sumFallasGlobal) : 0;
         let mttrGlobal = sumFallasGlobal > 0 ? (sumPerdidoGlobal / sumFallasGlobal) : 0;
         let mantGlobal = mttrGlobal > 0 ? (1 - Math.exp(-1 / mttrGlobal)) * 100 : 100;
 
         document.getElementById('k_equipos').innerText = eqCount;
-        document.getElementById('k_detenciones').innerText = sumFallasGlobal; // KPI Corregido solicitado
+        document.getElementById('k_detenciones').innerText = sumFallasGlobal; 
         document.getElementById('k_hrs').innerText = sumPerdidoGlobal.toFixed(1);
+        document.getElementById('k_plan').innerText = totalPlanificadoGlobal.toFixed(1);
+        document.getElementById('k_oper').innerText = totalOperativoGlobal.toFixed(1);
         document.getElementById('k_mant').innerText = mantGlobal.toFixed(1) + "%";
 
         drawCharts(sDesde, sHasta);
@@ -637,14 +675,11 @@ def generar_html_moderno(db_json):
             tbl = tbl.filter(d => `${d.p} ${d.l} ${d.e}`.toLowerCase().includes(search));
         }
 
-        tbl.sort((a,b) => a.conf - b.conf); // Los peores equipos primero (Pareto-style)
+        tbl.sort((a,b) => a.conf - b.conf); // Los peores equipos primero
 
         tbl.forEach(d => {
             let badgeClass = d.conf >= 80 ? 'b-ok' : (d.conf >= 50 ? 'b-warn' : 'b-danger');
             
-            // Mejora Analítica: Marcado de alta criticidad si acumula muchas horas de falla
-            if (d.tpop >= 15) { badgeClass = 'b-critico'; }
-
             let tr = document.createElement('tr');
             tr.className = "clickable-row";
             tr.setAttribute("onclick", `abrirModalEventos('${d.p}', '${d.l}', '${d.e}')`);
@@ -652,12 +687,12 @@ def generar_html_moderno(db_json):
             tr.innerHTML = `
                 <td>${d.p}</td>
                 <td>${d.l}</td>
-                <td style="font-weight:700; color: var(--text);">${d.e} ${d.tpop >= 15 ? '⚠️' : ''}</td>
+                <td style="font-weight:700; color: var(--text);">${d.e}</td>
                 <td>${d.det}</td>
                 <td style="font-weight:600;">${d.tpop.toFixed(2)}</td>
                 <td>${d.mtbf.toFixed(1)}</td>
                 <td>${d.mttr.toFixed(2)}</td>
-                <td><span class="badge ${badgeClass}">${d.tpop >= 15 && d.conf < 1 ? 'High Impact' : d.conf.toFixed(1) + '%'}</span></td>
+                <td><span class="badge ${badgeClass}">${d.conf.toFixed(1)}%</span></td>
                 <td>${d.mant.toFixed(1)}%</td>
                 <td>${d.prob.toFixed(1)}%</td>
             `;
@@ -731,7 +766,7 @@ def generar_html_moderno(db_json):
             "Planta": d.p, "Línea": d.l, "Equipo": d.e,
             "Cant. Detenciones": d.det, "Tpo Perdido (Hrs)": d.tpop,
             "MTBF": d.mtbf, "MTTR": d.mttr, 
-            "Mantenibilidad (%)": d.mant, "Prob Falla (%)": d.prob
+            "Confiabilidad (%)": d.conf, "Mantenibilidad (%)": d.mant, "Prob Falla (%)": d.prob
         }));
         const ws = XLSX.utils.json_to_sheet(exportData);
         const wb = XLSX.utils.book_new();
