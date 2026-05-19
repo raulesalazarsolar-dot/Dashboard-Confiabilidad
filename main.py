@@ -23,7 +23,6 @@ def buscar_columna_linea(df):
             return c
     return None
 
-
 def buscar_columna_equipo(df, planta_nombre):
     planta_lower = str(planta_nombre).lower()
     if "mercadeo" in planta_lower:
@@ -36,7 +35,6 @@ def buscar_columna_equipo(df, planta_nombre):
             return c
     return None
 
-
 def buscar_columna_semana(df):
     for c in df.columns:
         if 'semana' in str(c).lower() and 'aux' not in str(c).lower():
@@ -44,13 +42,11 @@ def buscar_columna_semana(df):
                 return c
     return None
 
-
 def buscar_tiempo_detencion_hr(df):
     for c in df.columns:
         if 'detencion' in str(c).lower() and 'hr' in str(c).lower():
             return c
     return None
-
 
 def buscar_columna_tiempo_oper(df):
     cols_lower = [str(c).lower().replace(' ', ' ').strip() for c in df.columns]
@@ -59,21 +55,14 @@ def buscar_columna_tiempo_oper(df):
             return df.columns[i]
     return None
 
-
 def limpiar_semana(serie):
-    """
-    Convierte una serie de semanas a int de forma segura.
-    Maneja floats (20.0→20), enteros (20→20) y strings ('Semana 20'→20).
-    Evita el bug 20.0 → str '20.0' → regex → 200.
-    """
-    resultado = pd.to_numeric(serie, errors='coerce')          # 20.0 → 20, NaN si falla
+    resultado = pd.to_numeric(serie, errors='coerce')          
     mask_nan = resultado.isna()
-    if mask_nan.any():                                          # fallback para strings
+    if mask_nan.any():                                         
         extraidos = serie[mask_nan].astype(str).str.extract(r'(\d{1,2})')[0]
         resultado = resultado.copy()
         resultado[mask_nan] = pd.to_numeric(extraidos, errors='coerce')
     return resultado.fillna(-1).astype(int)
-
 
 def buscar_columna_tiempo_plan(df):
     cols_lower = [str(c).lower().replace(' ', ' ').strip() for c in df.columns]
@@ -82,21 +71,13 @@ def buscar_columna_tiempo_plan(df):
             return df.columns[i]
     return None
 
-
 # ==========================================
 # 3. FILTROS DE NEGOCIO (CENTRALIZADOS)
 # ==========================================
 def filtrar_semanas(df):
-    """
-    Aplica filtros de semanas según reglas de negocio.
-    Usa .contains() en lugar de startswith para soportar nombres largos con espacios.
-    - L2: Solo desde la semana 15 en adelante.
-    - L4: Solo desde la semana 19 en adelante.
-    """
     df = df[~((df['Linea_Clean'].str.contains('L2', na=False)) & (df['Semana_Clean'] < 15))]
     df = df[~((df['Linea_Clean'].str.contains('L4', na=False)) & (df['Semana_Clean'] < 19))]
     return df
-
 
 # ==========================================
 # 4. EXTRACCIÓN Y TRANSFORMACIÓN (ETL)
@@ -117,8 +98,39 @@ def procesar_datos_confiabilidad():
 
     datos_equipos = []
     datos_lineas = []
+    datos_acciones = {}
 
+    # --- LECTURA DEL EXCEL DE ACCIONES CORRECTIVAS ---
+    archivo_acciones = next((f for f in archivos if 'acciones' in f.lower()), None)
+    if archivo_acciones:
+        print(f"\n📝 Leyendo Acciones Correctivas desde: {archivo_acciones}")
+        try:
+            ruta_acc = os.path.join(DATA_DIR, archivo_acciones)
+            df_acc = pd.read_excel(ruta_acc)
+            df_acc.columns = [str(c).lower().strip() for c in df_acc.columns]
+            
+            col_top = next((c for c in df_acc.columns if 'top' in c), None)
+            if col_top:
+                for _, row in df_acc.iterrows():
+                    top_rank = pd.to_numeric(row[col_top], errors='coerce')
+                    if pd.isna(top_rank): continue
+                    top_rank = int(top_rank)
+                    
+                    for col in df_acc.columns:
+                        if col != col_top:
+                            if col not in datos_acciones: datos_acciones[col] = {}
+                            val = row[col]
+                            datos_acciones[col][top_rank] = str(val).strip() if pd.notna(val) else "N/A"
+                print("  ✅ Acciones correctivas extraídas correctamente.")
+            else:
+                print("  ⚠️ No se encontró columna 'top' en el archivo de acciones.")
+        except Exception as e:
+            print(f"  ❌ Error leyendo archivo de acciones: {e}")
+
+    # --- LECTURA DE LOS EXCEL DE CONFIABILIDAD ---
     for archivo_nombre in archivos:
+        if 'acciones' in archivo_nombre.lower(): continue # Saltar el de acciones
+
         ruta_completa = os.path.join(DATA_DIR, archivo_nombre)
         print(f"\n🔍 Analizando: {archivo_nombre}")
         try:
@@ -153,16 +165,10 @@ def procesar_datos_confiabilidad():
             df_det['Semana_Clean']  = limpiar_semana(df_det[col_semana_det])
             df_det = df_det[df_det['Semana_Clean'] > 0]
 
-            # 🔧 FILTROS DE NEGOCIO - Centralizados en filtrar_semanas()
             df_det = filtrar_semanas(df_det)
 
             agrup_det_linea = df_det.groupby(['Linea_Clean', 'Semana_Clean']).agg(
                 tpo_perdido_linea=('Hrs_Perdidas', 'sum')
-            ).reset_index()
-
-            agrup_det_eq = df_det.groupby(['Linea_Clean', 'Semana_Clean', 'Equipo_Clean']).agg(
-                detenciones=('Equipo_Clean', 'count'),
-                tpo_perdido_eq=('Hrs_Perdidas', 'sum')
             ).reset_index()
 
             # --- LIMPIEZA TIEMPOS PLANIFICADOS Y OPERATIVOS ---
@@ -182,7 +188,6 @@ def procesar_datos_confiabilidad():
             df_tpo['Semana_Clean']  = limpiar_semana(df_tpo[col_semana_tpo])
             df_tpo = df_tpo[df_tpo['Semana_Clean'] > 0]
 
-            # 🔧 FILTROS DE NEGOCIO - Centralizados en filtrar_semanas()
             df_tpo = filtrar_semanas(df_tpo)
 
             agrup_tpo_linea = df_tpo.groupby(['Linea_Clean', 'Semana_Clean']).agg(
@@ -194,11 +199,8 @@ def procesar_datos_confiabilidad():
             linea_merged = pd.merge(agrup_tpo_linea, agrup_det_linea, on=['Linea_Clean', 'Semana_Clean'], how='outer')
             linea_merged['tpo_perdido_linea']   = linea_merged.get('tpo_perdido_linea',   pd.Series([0] * len(linea_merged))).fillna(0)
             linea_merged['tpo_operativo_linea'] = linea_merged.get('tpo_operativo_linea', pd.Series([0] * len(linea_merged))).fillna(0)
-            linea_merged['tpo_plan_linea']       = linea_merged.get('tpo_plan_linea',       pd.Series([0] * len(linea_merged))).fillna(0)
+            linea_merged['tpo_plan_linea']      = linea_merged.get('tpo_plan_linea',      pd.Series([0] * len(linea_merged))).fillna(0)
 
-            # 🔧 RECONCILIACIÓN DE TIEMPOS:
-            # Si existe columna de tiempo operativo directo, se confía en ella.
-            # Si no, se deriva del tiempo planificado - tiempo perdido.
             tipo_tiempo = 'operativo' if col_tpo_oper else 'plan'
 
             for idx, row in linea_merged.iterrows():
@@ -207,18 +209,14 @@ def procesar_datos_confiabilidad():
                 perdido = row['tpo_perdido_linea']
 
                 if tipo_tiempo == 'operativo':
-                    # Tenemos columna operativa directa → no restamos nada.
-                    # Si operativo es 0 y hay plan, heredamos el plan como base.
                     if oper == 0 and plan > 0:
                         linea_merged.at[idx, 'tpo_operativo_linea'] = plan
                 else:
-                    # Sin columna operativa → calculamos desde el plan.
                     if oper == 0 and plan > 0:
                         linea_merged.at[idx, 'tpo_operativo_linea'] = max(0, plan - perdido)
                     elif plan == 0 and oper > 0:
                         linea_merged.at[idx, 'tpo_plan_linea'] = oper + perdido
 
-            # 🔧 MAPEO COHERENTE: HERENCIA DE TIEMPOS PARA ENVASADO (MULTIVAC / VARIOVAC)
             tiempos_lineas_madre = {}
             for idx, row_lm in linea_merged.iterrows():
                 l_str  = str(row_lm['Linea_Clean']).upper()
@@ -242,8 +240,6 @@ def procesar_datos_confiabilidad():
                         linea_merged.at[idx, 'tpo_operativo_linea'] = tiempos_lineas_madre[(target_key, sem)]['op']
                         linea_merged.at[idx, 'tpo_plan_linea']       = tiempos_lineas_madre[(target_key, sem)]['pl']
 
-            # 🔧 HERENCIA L2: Si el tiempo operativo sigue en 0, hereda del mayor valor
-            # de otra fila L2 en la misma semana (evita 0.0% en el dashboard).
             for idx, row in linea_merged.iterrows():
                 if row['tpo_operativo_linea'] <= 0:
                     herencia = linea_merged[
@@ -263,7 +259,6 @@ def procesar_datos_confiabilidad():
                     "tpo_plan_linea":       float(row.get('tpo_plan_linea', 0)),
                 })
 
-            # Eventos atómicos para el desglose (Drill-down)
             for _, row in df_det.iterrows():
                 datos_equipos.append({
                     "super_planta":  super_planta,
@@ -283,10 +278,9 @@ def procesar_datos_confiabilidad():
         except Exception as e:
             print(f"  ❌ Error fatal procesando {archivo_nombre}: {e}")
 
-    db_json = {"equipos": datos_equipos, "lineas": datos_lineas}
+    db_json = {"equipos": datos_equipos, "lineas": datos_lineas, "acciones": datos_acciones}
     print("\n✅ Extracción finalizada. Datos listos para el Dashboard.")
     return db_json
-
 
 # ==========================================
 # 5. GENERADOR HTML DASHBOARD
@@ -390,9 +384,10 @@ body.theme-carnes .tab-btn.active { color: #dc2626; border-bottom-color: #dc2626
 .tab-btn:hover:not(.active) { color: var(--text); background: var(--bg); border-radius: 6px 6px 0 0; }
 .tab-panel { display: none; flex: 1; overflow: hidden; }
 .tab-panel.active { display: flex; }
-/* ── RESUMEN ── */
-.resumen-panel { display: flex; flex-direction: row; align-items: stretch; flex-wrap: nowrap; gap: 18px; padding: 18px 24px; overflow-x: auto; overflow-y: hidden; background: var(--bg); }
-.eq-rank-row { display: grid; grid-template-columns: 22px max-content 88px 88px; gap: 7px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); }
+
+/* ── RESUMEN (RESTAURADO A COMO ESTABA AL PRINCIPIO) ── */
+.resumen-panel { flex-direction: row; align-items: flex-start; flex-wrap: wrap; gap: 14px; padding: 18px 24px; overflow-y: auto; background: var(--bg); }
+.plant-card { flex: 1; min-width: 420px; background: var(--surface); border-radius: 10px; border: 1px solid var(--border); overflow: hidden; display: flex; box-shadow: 0 2px 6px rgba(0,0,0,0.03); }
 .plant-bar-col { width: 200px; flex-shrink: 0; padding: 12px 14px; display: flex; flex-direction: column; }
 .plant-bar-col.tema-masas { background: #1A3A5C; }
 .plant-bar-col.tema-carnes { background: #4A0E0E; }
@@ -413,12 +408,15 @@ body.theme-carnes .tab-btn.active { color: #dc2626; border-bottom-color: #dc2626
 .plant-avg-val { font-size: 28px; font-weight: 800; color: #fff; line-height: 1; }
 .plant-eq-col { flex: 1; padding: 12px 16px; overflow-y: auto; }
 .plant-eq-col h4 { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing:.8px; color: var(--text-muted); margin-bottom: 10px; }
-.eq-rank-row { display: grid; grid-template-columns: 22px 1fr 88px 88px; gap: 7px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); }
+
+/* ── GRID MODIFICADA CON LA COLUMNA ACCION CORRECTIVA ── */
+.eq-rank-row { display: grid; grid-template-columns: 22px 1fr 1.5fr 88px 88px; gap: 7px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); }
 .eq-rank-num { width: 20px; height: 20px; border-radius: 50%; font-size: 8px; font-weight: 800; color: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .rn1{background:#CC2222;}.rn2{background:#E65100;}.rn3{background:#F9A825;color:#333;}.rn4{background:#5D6D7E;}.rn5{background:#95A5A6;}
-.eq-rank-name { font-size: 10px; font-weight: 700; color: var(--secondary); white-space: nowrap; padding-right: 15px; }
+.eq-rank-name { font-size: 10px; font-weight: 700; color: var(--secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .eq-rank-badge { font-size: 7px; padding: 1px 5px; border-radius: 3px; font-weight: 800; background: var(--accent); color: #fff; display: inline-block; margin-left: 4px; vertical-align: middle; }
 body.theme-carnes .eq-rank-badge { background: #dc2626; }
+.eq-rank-accion { font-size: 9px; font-weight: 500; font-style: italic; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .eq-rank-kpi { text-align: center; background: #f8fafc; border-radius: 5px; padding: 4px 3px; }
 body.theme-carnes .eq-rank-kpi { background: #fef2f2; }
 .eq-rank-kpi .rval { font-size: 12px; font-weight: 800; line-height: 1; display: block; }
@@ -617,7 +615,6 @@ function applyFilters() {
   currentLnData = recordsLn.filter(baseFilter);
   currentEqData = recordsEq.filter(baseFilter);
 
-  // 1. Acumular tiempo operativo y planificado por línea
   let opTimeByLine = {};
   let totalPlanificadoGlobal  = 0;
 
@@ -629,7 +626,6 @@ function applyFilters() {
     totalPlanificadoGlobal  += d.tpo_plan_linea;
   });
 
-  // 2. Acumular detenciones y agrupar historial atómico
   let eqMap = {};
   currentEqData.forEach(d => {
     let eqKey = d.planta + "|" + d.linea + "|" + d.equipo;
@@ -639,7 +635,6 @@ function applyFilters() {
     eqMap[eqKey].eventos.push({ fecha: d.fecha, componente: d.componente, tipo: d.tipo, hrs: d.tpo_perdido_eq });
   });
 
-  // 3a. Pérdida total por línea (para calcular Tpo. Operación = Plan − Perdido)
   let lostByLine = {};
   currentEqData.forEach(d => {
     let k = d.planta + "|" + d.linea;
@@ -647,9 +642,6 @@ function applyFilters() {
     lostByLine[k] += d.tpo_perdido_eq;
   });
 
-  // 3b. Mapeo estructurado de KPIs
-  // Tiempo Operación = Tiempo Planificado − Tiempo Perdido (por línea).
-  // El MTBF usa ese tiempo operativo real, no la columna cruda de la hoja.
   tableDataFull = Object.values(eqMap).map(d => {
     let planTime = opTimeByLine[d.p + "|" + d.l] ? opTimeByLine[d.p + "|" + d.l].pl : 0;
     let opTime   = Math.max(0, planTime - (lostByLine[d.p + "|" + d.l] || 0));
@@ -661,7 +653,6 @@ function applyFilters() {
     return { ...d, opTime, mtbf, mttr, conf, mant, prob };
   });
 
-  // KPIs globales
   let eqCount           = tableDataFull.length;
   let sumPerdidoGlobal  = tableDataFull.reduce((s, d) => s + d.tpop, 0);
   let sumFallasGlobal   = tableDataFull.reduce((s, d) => s + d.det, 0);
@@ -683,9 +674,7 @@ function applyFilters() {
 function drawCharts(sDesde, sHasta) {
   if (currentLnData.length === 0) return;
 
-  const accentColor = isCarnesTheme ? '#dc2626' : '#0ea5e9';
   const secColor    = isCarnesTheme ? '#991b1b' : '#334155';
-
   let weeks        = [];
   let mtbfTrend    = [];
   let mttrTrend    = [];
@@ -698,13 +687,11 @@ function drawCharts(sDesde, sHasta) {
     let sPlan = dLn.reduce((s, d) => s + d.tpo_plan_linea, 0);
     let sPerd = dEq.reduce((s, d) => s + d.tpo_perdido_eq, 0);
     let sDet  = dEq.reduce((s, d) => s + d.detenciones, 0);
-    // Tiempo Operación semanal = Plan − Perdido (mismo criterio que la tabla)
     let sOper = Math.max(0, sPlan - sPerd);
     mtbfTrend.push(sDet > 0 ? (sOper / sDet).toFixed(2) : (sOper > 0 ? sOper : 0));
     mttrTrend.push(sDet > 0 ? (sPerd / sDet).toFixed(2) : 0);
   });
 
-  // Jackknife
   if (chartInstances['jackknife']) chartInstances['jackknife'].destroy();
   chartInstances['jackknife'] = new Chart(document.getElementById('chart_jackknife'), {
     type: 'scatter',
@@ -730,7 +717,6 @@ function drawCharts(sDesde, sHasta) {
     },
   });
 
-  // Tendencia MTBF / MTTR
   if (chartInstances['trend_mtbf']) chartInstances['trend_mtbf'].destroy();
   chartInstances['trend_mtbf'] = new Chart(document.getElementById('chart_trend_mtbf'), {
     type: 'line',
@@ -855,7 +841,6 @@ function renderResumen() {
   const el = document.getElementById('resumen_content');
   if (!currentLnData.length) { el.innerHTML = '<p style="padding:30px;color:var(--text-muted);">Sin datos para el rango seleccionado.</p>'; return; }
 
-  // Agrupar datos de linea por planta
   const lnByPlanta = {};
   currentLnData.forEach(d => {
     if (!lnByPlanta[d.planta]) lnByPlanta[d.planta] = {};
@@ -864,7 +849,6 @@ function renderResumen() {
     lnByPlanta[d.planta][d.linea].pl += d.tpo_plan_linea;
   });
 
-  // Agrupar detenciones y horas perdidas por planta+linea+equipo
   const eqByPlanta = {};
   currentEqData.forEach(d => {
     if (!eqByPlanta[d.planta]) eqByPlanta[d.planta] = {};
@@ -875,14 +859,12 @@ function renderResumen() {
   });
 
   const tema = isCarnesTheme ? 'tema-carnes' : 'tema-masas';
-  const accent = isCarnesTheme ? '#dc2626' : '#0071CE';
-
+  
   let html = '';
   Object.keys(lnByPlanta).sort().forEach(planta => {
     const lineas = lnByPlanta[planta];
     const eqs    = Object.values(eqByPlanta[planta] || {});
 
-    // Calcular prob. falla por linea
     const lineaStats = Object.entries(lineas).map(([ln, d]) => {
       const lnDet  = eqs.filter(e => e.linea === ln).reduce((s,e) => s + e.det, 0);
       const mtbf   = lnDet > 0 ? d.op / lnDet : 0;
@@ -891,9 +873,9 @@ function renderResumen() {
       return { ln, op: d.op, pl: d.pl, perdido, prob };
     }).sort((a,b) => b.prob - a.prob);
 
-    const avgProb = lineaStats.length ? lineaStats.reduce((s,x)=>s+x.prob,0)/lineaStats.length : 0;   const maxProb = Math.max(...lineaStats.map(x => x.prob), 1);
+    const avgProb = lineaStats.length ? lineaStats.reduce((s,x)=>s+x.prob,0)/lineaStats.length : 0;   
+    const maxProb = Math.max(...lineaStats.map(x => x.prob), 1);
 
-    // Top 5 equipos criticos (por prob. falla)
     const top5 = eqs.map(e => {
       const lnOp  = lineas[e.linea]?.op || 0;
       const mtbf  = e.det > 0 ? lnOp / e.det : 0;
@@ -902,12 +884,9 @@ function renderResumen() {
       return { ...e, prob, mtbf, mttr };
     }).filter(e => e.det > 0).sort((a,b)=>b.prob-a.prob).slice(0,5);
 
-    // Columna izquierda: barras por linea
     const barras = lineaStats.map((s,i) => {
       const pct = (s.prob / Math.max(maxProb, 1) * 100).toFixed(1);
       const color = s.prob > 60 ? '#C0392B' : s.prob > 35 ? '#E67E22' : '#27AE60';
-      const opPct = s.pl > 0 ? (s.op / s.pl * 100) : 0;
-      const lostPct = 100 - opPct;
       return `
         <div class="line-bar-item">
           <div class="line-bar-top">
@@ -925,15 +904,30 @@ function renderResumen() {
         </div>`;
     }).join('');
 
-    // Columna derecha: top equipos
     const rankColors = ['rn1','rn2','rn3','rn4','rn5'];
+    const pKeyLowerCase = planta.toLowerCase();
+
     const filas = top5.map((e, i) => {
       const probColor = e.prob > 60 ? '#b91c1c' : e.prob > 35 ? '#b45309' : '#047857';
-      const probBg    = e.prob > 60 ? '#fee2e2' : e.prob > 35 ? '#fef3c7' : '#d1fae5';
+      const rankTop = i + 1;
+      
+      // Lógica de coincidencia inteligente para sacar el texto de Acción Correctiva
+      let accionStr = "-";
+      if (dbRaw.acciones) {
+        for (let col in dbRaw.acciones) {
+            // Si el nombre de la planta en el excel coincide total o parcialmente con la planta real
+            if (pKeyLowerCase.includes(col) || col.includes(pKeyLowerCase)) {
+                accionStr = dbRaw.acciones[col][rankTop] || "-";
+                break;
+            }
+        }
+      }
+
       return `
         <div class="eq-rank-row">
-          <div class="eq-rank-num ${rankColors[i]}">${i+1}</div>
-          <div class="eq-rank-name">${e.equipo}<span class="eq-rank-badge">${e.linea.substring(0,5)}</span></div>
+          <div class="eq-rank-num ${rankColors[i]}">${rankTop}</div>
+          <div class="eq-rank-name" title="${e.equipo}">${e.equipo}<span class="eq-rank-badge">${e.linea.substring(0,5)}</span></div>
+          <div class="eq-rank-accion" title="${accionStr}">${accionStr}</div>
           <div class="eq-rank-kpi">
             <span class="rval" style="color:${probColor};">${e.prob.toFixed(1)}%</span>
             <span class="rsub">Prob. Falla</span>
