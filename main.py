@@ -57,11 +57,11 @@ def buscar_tiempo_detencion_hr(df):
         if 'detencion' in cl and 'hr' in cl: return c
     return None
 
-def buscar_tiempo_planificado_hr(df):
+def buscar_tiempo_operativo_hr(df):
+    # Extrae el Tpo Operativo [hr] real de la hoja de tiempos
     for c in df.columns:
         cl = str(c).lower().strip().replace('  ', ' ')
-        if 'plan' in cl and 'hr' in cl: return c
-        if 'disponible' in cl and 'hr' in cl: return c
+        if 'operativo' in cl and 'hr' in cl: return c
     return None
 
 # ==========================================
@@ -106,6 +106,7 @@ def procesar_datos_confiabilidad():
             col_tpo_det = buscar_tiempo_detencion_hr(df_det)
             
             if not all([col_equipo, col_semana_det, col_linea_det, col_tpo_det]):
+                print(f"   ❌ Faltan columnas en FEM. Eq:{col_equipo}, Sem:{col_semana_det}, Lin:{col_linea_det}, Tpo:{col_tpo_det}")
                 continue
 
             df_det = df_det.dropna(subset=[col_equipo, col_semana_det, col_linea_det])
@@ -136,9 +137,10 @@ def procesar_datos_confiabilidad():
             # --- LIMPIEZA TIEMPOS PLANIFICADOS ---
             col_semana_tpo = buscar_columna_semana(df_tpo)
             col_linea_tpo = buscar_columna_linea(df_tpo)
-            col_tpo_oper = buscar_tiempo_operativo_hr(df_tpo) # <-- Usa el buscador corregido que te di antes
+            col_tpo_oper = buscar_tiempo_operativo_hr(df_tpo)
             
             if not all([col_semana_tpo, col_linea_tpo, col_tpo_oper]):
+                print(f"   ❌ Faltan columnas en Tiempos. Sem:{col_semana_tpo}, Lin:{col_linea_tpo}, TpoOper:{col_tpo_oper}")
                 continue
 
             df_tpo = df_tpo.dropna(subset=[col_linea_tpo, col_semana_tpo])
@@ -193,7 +195,6 @@ def procesar_datos_confiabilidad():
     db_json = { "equipos": datos_equipos, "lineas": datos_lineas }
     print(f"\n✅ Extracción finalizada. Datos listos para el Dashboard.")
     return db_json
-
 
 # ==========================================
 # 4. GENERADOR HTML DASHBOARD
@@ -465,7 +466,7 @@ def generar_html_moderno(db_json):
             eqMap[eqKey].tpop += d.tpo_perdido_eq;
         });
 
-        // --- APLICACIÓN EXACTA DE FÓRMULAS DE LA IMAGEN ---
+        // --- APLICACIÓN EXACTA DE FÓRMULAS ---
         tableDataFull = Object.values(eqMap).map(d => {
             let opTime = opTimeByLine[d.p + "|" + d.l] || 0;
             
