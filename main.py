@@ -160,7 +160,7 @@ def procesar_datos_confiabilidad():
             else:
                 linea_merged['tpo_operativo_linea'] = (linea_merged['tpo_base_linea'] - linea_merged['tpo_perdido_linea']).clip(lower=0)
             
-            # 🧠 MAPEO COHRENTE: HERENCIA DE TIEMPOS PARA ENVASADO (MULTIVAC / VARIOVAC) 🧠
+            # 🧠 MAPEO COHERENTE: HERENCIA DE TIEMPOS PARA ENVASADO (MULTIVAC / VARIOVAC) 🧠
             tiempos_lineas_madre = {}
             for idx, row_lm in linea_merged.iterrows():
                 l_str = str(row_lm['Linea_Clean']).upper()
@@ -483,7 +483,7 @@ def generar_html_moderno(db_json):
             eqMap[eqKey].tpop += d.tpo_perdido_eq;
         });
 
-        // --- APLICACIÓN EXACTA DE FÓRMULAS ---
+        // 3. Calcular KPIs usando el tiempo total acumulado de la línea
         tableDataFull = Object.values(eqMap).map(d => {
             let opTime = opTimeByLine[d.p + "|" + d.l] || 0;
             
