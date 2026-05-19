@@ -155,11 +155,33 @@ def procesar_datos_confiabilidad():
             linea_merged['tpo_perdido_linea'] = linea_merged.get('tpo_perdido_linea', pd.Series([0]*len(linea_merged))).fillna(0)
             linea_merged['tpo_base_linea'] = linea_merged['tpo_base_linea'].fillna(0)
             
-            # Calculamos el Tiempo Operativo Final dependiendo de qué columna encontró
             if tipo_tiempo == 'operativo':
                 linea_merged['tpo_operativo_linea'] = linea_merged['tpo_base_linea']
             else:
                 linea_merged['tpo_operativo_linea'] = (linea_merged['tpo_base_linea'] - linea_merged['tpo_perdido_linea']).clip(lower=0)
+            
+            # 🧠 MAPEO COHRENTE: HERENCIA DE TIEMPOS PARA ENVASADO (MULTIVAC / VARIOVAC) 🧠
+            tiempos_lineas_madre = {}
+            for idx, row_lm in linea_merged.iterrows():
+                l_str = str(row_lm['Linea_Clean']).upper()
+                sem = row_lm['Semana_Clean']
+                tpo = row_lm['tpo_operativo_linea']
+                if tpo > 0:
+                    for pref in ['L1', 'L2', 'L3', 'L4', 'L5']:
+                        if pref in l_str:
+                            tiempos_lineas_madre[(pref, sem)] = tpo
+
+            for idx, row_lm in linea_merged.iterrows():
+                l_str = str(row_lm['Linea_Clean']).upper()
+                if row_lm['tpo_operativo_linea'] == 0 or 'MULTIVAC' in l_str or 'VARIOVAC' in l_str:
+                    sem = row_lm['Semana_Clean']
+                    target_key = None
+                    if 'MULTIVAC 1' in l_str or 'M1' in l_str: target_key = 'L1'
+                    elif 'MULTIVAC 2' in l_str or 'M2' in l_str or 'VARIOVAC' in l_str: target_key = 'L2'
+                    elif 'MULTIVAC 3' in l_str or 'M3' in l_str: target_key = 'L3'
+                    
+                    if target_key and (target_key, sem) in tiempos_lineas_madre:
+                        linea_merged.at[idx, 'tpo_operativo_linea'] = tiempos_lineas_madre[(target_key, sem)]
             
             for _, row in linea_merged.iterrows():
                 datos_lineas.append({
