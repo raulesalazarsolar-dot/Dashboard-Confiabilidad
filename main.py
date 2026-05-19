@@ -207,7 +207,7 @@ def procesar_datos_confiabilidad():
                     "tpo_plan_linea": float(row.get('tpo_plan_linea', 0))
                 })
 
-            # Conservamos los eventos atómicos para el desglose (Drill-down)
+            # Eventos atómicos para el desglose (Drill-down)
             for _, row in df_det.iterrows():
                 datos_equipos.append({
                     "super_planta": super_planta,
@@ -393,12 +393,12 @@ def generar_html_moderno(db_json):
 
             <div class="charts-row">
                 <div class="chart-container">
-                    <div class="chart-header">📈 Tendencia de Confiabilidad y Prob. Falla (Semanal)</div>
-                    <div class="canvas-wrapper"><canvas id="chart_trend_conf"></canvas></div>
+                    <div class="chart-header">🎯 Jackknife: Durabilidad (Hrs) vs Repetición de Falla</div>
+                    <div class="canvas-wrapper"><canvas id="chart_jackknife"></canvas></div>
                 </div>
                 <div class="chart-container">
-                    <div class="chart-header">🎯 Jackknife: Tiempo Perdido vs Frecuencia</div>
-                    <div class="canvas-wrapper"><canvas id="chart_jackknife"></canvas></div>
+                    <div class="chart-header">⏱️ Evolución Tiempos Medios (MTBF vs MTTR)</div>
+                    <div class="canvas-wrapper"><canvas id="chart_trend_mtbf"></canvas></div>
                 </div>
             </div>
 
@@ -608,38 +608,25 @@ def generar_html_moderno(db_json):
         let weeks = [];
         for(let i=sDesde; i<=sHasta; i++) weeks.push(i);
         
-        let confTrend = [];
-        let probTrend = [];
+        let mtbfTrend = [];
+        let mttrTrend = [];
 
         weeks.forEach(w => {
             let dLn = currentLnData.filter(d => d.semana === w);
             let dEq = currentEqData.filter(d => d.semana === w);
             
             let sOp = dLn.reduce((s, d) => s + d.tpo_operativo_linea, 0);
+            let sPerd = dEq.reduce((s, d) => s + d.tpo_perdido_eq, 0);
             let sDet = dEq.reduce((s, d) => s + d.detenciones, 0);
             
             let wMtbf = sDet > 0 ? (sOp / sDet) : (sOp > 0 ? sOp : 0);
-            let wConf = sDet > 0 ? Math.exp(-120 / wMtbf) * 100 : (sOp > 0 ? 100 : 0);
+            let wMttr = sDet > 0 ? (sPerd / sDet) : 0;
             
-            confTrend.push(wConf.toFixed(2));
-            probTrend.push((sOp > 0 ? 100-wConf : 0).toFixed(2));
+            mtbfTrend.push(wMtbf.toFixed(2));
+            mttrTrend.push(wMttr.toFixed(2));
         });
 
-        // 1. Gráfico de Tendencia
-        if(chartInstances['trend_conf']) chartInstances['trend_conf'].destroy();
-        chartInstances['trend_conf'] = new Chart(document.getElementById('chart_trend_conf'), {
-            type: 'line',
-            data: {
-                labels: weeks.map(w => 'Semana ' + w),
-                datasets: [
-                    { label: 'Confiabilidad (%)', data: confTrend, borderColor: accentColor, backgroundColor: accentColor + '20', borderWidth: 3, fill: true, tension: 0.3 },
-                    { label: 'Prob. Falla (%)', data: probTrend, borderColor: '#ef4444', borderDash: [5, 5], borderWidth: 2, tension: 0.3 }
-                ]
-            },
-            options: { maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } }
-        });
-
-        // 2. Gráfico Jackknife (Dispersión)
+        // 1. Gráfico Jackknife (Reemplaza Tendencia Confiabilidad)
         if(chartInstances['jackknife']) chartInstances['jackknife'].destroy();
         
         let jackknifeData = tableDataFull.filter(d => d.det > 0).map(d => ({
@@ -655,7 +642,7 @@ def generar_html_moderno(db_json):
                 datasets: [{
                     label: 'Equipos',
                     data: jackknifeData,
-                    backgroundColor: isCarnesTheme ? '#dc2626' : '#f59e0b',
+                    backgroundColor: isCarnesTheme ? '#dc2626' : '#ea580c',
                     borderColor: isCarnesTheme ? '#991b1b' : '#b45309',
                     borderWidth: 1,
                     pointRadius: 6,
@@ -686,6 +673,26 @@ def generar_html_moderno(db_json):
                         position: 'left', 
                         title: { display: true, text: 'Durabilidad (Tiempo Perdido Hrs)', font: {weight: 'bold'} } 
                     }
+                }
+            }
+        });
+
+        // 2. Gráfico de Evolución Tiempos Medios (MTBF vs MTTR) - Conservado Intacto
+        if(chartInstances['trend_mtbf']) chartInstances['trend_mtbf'].destroy();
+        chartInstances['trend_mtbf'] = new Chart(document.getElementById('chart_trend_mtbf'), {
+            type: 'line',
+            data: {
+                labels: weeks.map(w => 'Semana ' + w),
+                datasets: [
+                    { label: 'MTBF (Hrs)', data: mtbfTrend, borderColor: secColor, borderWidth: 3, tension: 0.3, yAxisID: 'y' },
+                    { label: 'MTTR (Hrs)', data: mttrTrend, borderColor: '#f59e0b', borderWidth: 3, borderDash: [5, 5], tension: 0.3, yAxisID: 'y1' }
+                ]
+            },
+            options: {
+                maintainAspectRatio: false,
+                scales: {
+                    y: { type: 'linear', position: 'left', title: {display:true, text:'MTBF (h)'} },
+                    y1: { type: 'linear', position: 'right', grid: { drawOnChartArea: false }, title: {display:true, text:'MTTR (h)'} }
                 }
             }
         });
