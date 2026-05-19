@@ -145,7 +145,7 @@ body.theme-carnes .tab-btn.active { color: #A93226; border-bottom-color: #A93226
     <div style="padding:20px;border-top:1px solid var(--border);">
       <button class="btn-export" onclick="descargarExcel()">⬇️ Exportar Data a Excel</button>
       <div style="text-align:center;font-size:0.7rem;color:var(--text-muted);margin-top:15px;font-weight:600;">
-        Actualizado: 19/05/2026 15:30
+        Actualizado: 19/05/2026 15:36
       </div>
     </div>
   </div>
@@ -546,12 +546,19 @@ function renderResumen() {
   Object.keys(lnByPlanta).sort().forEach(planta => {
     const pKeyLowerCase = planta.toLowerCase();
     
-    // Tema dinámico según el nombre de la planta
     let tema = 'tema-masas';
     let temaPillColor = '#0071CE';
-    if ('carne' in pKeyLowerCase || 'mercadeo' in pKeyLowerCase) { tema = 'tema-carnes'; temaPillColor = '#C0392B'; }
-    elif ('dely' in pKeyLowerCase) { tema = 'tema-dely'; temaPillColor = '#00897B'; }
-    elif ('molida' in pKeyLowerCase) { tema = 'tema-molida'; temaPillColor = '#D35400'; }
+    
+    if (pKeyLowerCase.includes('carne') || pKeyLowerCase.includes('mercadeo')) { 
+        tema = 'tema-carnes'; 
+        temaPillColor = '#C0392B'; 
+    } else if (pKeyLowerCase.includes('dely')) { 
+        tema = 'tema-dely'; 
+        temaPillColor = '#00897B'; 
+    } else if (pKeyLowerCase.includes('molida')) { 
+        tema = 'tema-molida'; 
+        temaPillColor = '#D35400'; 
+    }
 
     const lineas = lnByPlanta[planta];
     const eqs    = Object.values(eqByPlanta[planta] || {});
