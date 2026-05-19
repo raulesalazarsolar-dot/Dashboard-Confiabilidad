@@ -120,11 +120,6 @@ def procesar_datos_confiabilidad():
                 tpo_perdido_linea=('Hrs_Perdidas', 'sum')
             ).reset_index()
             
-            agrup_det_eq = df_det.groupby(['Linea_Clean', 'Semana_Clean', 'Equipo_Clean']).agg(
-                detenciones=('Equipo_Clean', 'count'),
-                tpo_perdido_eq=('Hrs_Perdidas', 'sum')
-            ).reset_index()
-            
             # --- LIMPIEZA TIEMPOS PLANIFICADOS ---
             col_semana_tpo = buscar_columna_semana(df_tpo)
             col_linea_tpo = buscar_columna_linea(df_tpo)
@@ -192,19 +187,22 @@ def procesar_datos_confiabilidad():
                     "tpo_operativo_linea": float(row.get('tpo_operativo_linea', 0))
                 })
 
-            df_final_eq = pd.merge(agrup_det_eq, linea_merged, on=['Linea_Clean', 'Semana_Clean'], how='left')
-            for _, row in df_final_eq.iterrows():
+            # Conservamos los eventos atómicos para el desglose (Drill-down) en el Dashboard
+            for _, row in df_det.iterrows():
                 datos_equipos.append({
                     "super_planta": super_planta,
                     "planta": planta_nombre,
                     "linea": row['Linea_Clean'],
                     "equipo": row['Equipo_Clean'],
                     "semana": int(row['Semana_Clean']),
-                    "detenciones": int(row['detenciones']),
-                    "tpo_perdido_eq": float(row['tpo_perdido_eq'])
+                    "detenciones": 1,
+                    "tpo_perdido_eq": float(row['Hrs_Perdidas']),
+                    "fecha": str(row['Fecha'])[:10] if 'Fecha' in df_det.columns else 'N/A',
+                    "componente": str(row['Componente']) if 'Componente' in df_det.columns else 'N/A',
+                    "tipo": str(row['Tipo Detención']) if 'Tipo Detención' in df_det.columns else 'N/A'
                 })
                 
-            print(f"   ✅ Procesado con éxito. Extraídos {len(df_final_eq)} equipos con fallas.")
+            print(f"   ✅ Procesado con éxito. Extraídas detenciones de {planta_nombre}.")
                 
         except Exception as e:
             print(f"   ❌ Error fatal procesando {archivo_nombre}: {e}")
@@ -282,18 +280,36 @@ def generar_html_moderno(db_json):
         th { background: #f8fafc; padding: 12px 15px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; position: sticky; top: 0; z-index: 2; border-bottom: 2px solid var(--border); cursor: pointer; }
         body.theme-carnes th { background: #fef2f2; }
         td { padding: 12px 15px; border-bottom: 1px solid var(--border); color: var(--secondary); font-weight: 500; }
-        tr:hover td { background: var(--bg); }
+        tr.clickable-row { cursor: pointer; transition: background 0.15s; }
+        tr.clickable-row:hover td { background: rgba(14, 165, 233, 0.04) !important; }
+        body.theme-carnes tr.clickable-row:hover td { background: rgba(220, 38, 38, 0.04) !important; }
+        
         .badge { padding: 4px 8px; border-radius: 6px; font-weight: 700; font-size: 0.75rem; }
         .b-ok { background: #d1fae5; color: #047857; }
         .b-warn { background: #fef3c7; color: #b45309; }
         .b-danger { background: #fee2e2; color: #b91c1c; }
+        .b-critico { background: #ffedd5; color: #ea580c; border: 1px solid #ffd8a8; }
+
+        /* --- ESTILOS MODAL DETALLES --- */
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(5px); display: none; justify-content: center; align-items: center; z-index: 100; padding: 20px; }
+        .modal-content { background: var(--surface); width: 100%; max-width: 850px; border-radius: 16px; border: 1px solid var(--border); box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); display: flex; flex-direction: column; max-height: 80vh; animation: modalIn 0.2s ease-out; }
+        @keyframes modalIn { from { transform: translateY(15px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .modal-header { padding: 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: #f8fafc; border-top-left-radius: 16px; border-top-right-radius: 16px; }
+        body.theme-carnes .modal-header { background: #fef2f2; }
+        .modal-header h3 { margin: 0; font-size: 1.2rem; font-weight: 800; color: var(--secondary); }
+        .modal-header p { margin: 2px 0 0 0; font-size: 0.85rem; color: var(--text-muted); font-weight: 500; }
+        .modal-body { padding: 20px; overflow-y: auto; }
+        .close-btn { background: none; border: none; font-size: 1.5rem; color: var(--text-muted); cursor: pointer; font-weight: 700; }
+        .close-btn:hover { color: var(--danger); }
+        .modal-body table th { position: static; background: #f1f5f9; border-bottom: 1px solid var(--border); }
+        body.theme-carnes .modal-body table th { background: #fee2e2; }
     </style>
 </head>
 <body>
     <div class="top-bar">
         <div class="brand">
             <img src="https://upload.wikimedia.org/wikipedia/commons/b/b1/Walmart_logo_%282008%29.svg" alt="Walmart" style="height: 30px; filter: brightness(0) invert(1);">
-            <h2>Dashboard Confiabilidad <span>Subgerencia de mantenimiento 2026</span></h2>
+            <h2>Dashboard Confiabilidad <span>Libro Confiabilidad Walmart 2026</span></h2>
         </div>
         <div class="planta-switch">
             <span id="lbl_masas" class="active">Masas</span>
@@ -334,8 +350,8 @@ def generar_html_moderno(db_json):
                     <h3 id="k_equipos">0</h3>
                 </div>
                 <div class="kpi-card c-green">
-                    <span>Confiabilidad Global (R)</span>
-                    <h3 id="k_conf">0%</h3>
+                    <span>Detenciones MTTO</span>
+                    <h3 id="k_detenciones">0</h3>
                 </div>
                 <div class="kpi-card c-red">
                     <span>Tpo. Perdido Total (Hrs)</span>
@@ -360,7 +376,7 @@ def generar_html_moderno(db_json):
 
             <div class="table-container">
                 <div class="table-header">
-                    <span>📋 Matriz Acumulada de KPIs (Rango de semanas seleccionado)</span>
+                    <span>📋 Matriz Acumulada de KPIs (Haz clic en cualquier fila para ver el desglose)</span>
                     <input type="text" id="search_input" placeholder="🔍 Buscar equipo o línea..." onkeyup="renderTable()">
                 </div>
                 <div class="table-wrapper">
@@ -382,6 +398,31 @@ def generar_html_moderno(db_json):
                         <tbody id="table_body"></tbody>
                     </table>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal_overlay" class="modal-overlay" onclick="cerrarModalExterno(event)">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h3 id="modal_titulo">Historial de Detenciones</h3>
+                    <p id="modal_subtitulo">Planta | Línea</p>
+                </div>
+                <button class="close-btn" onclick="cerrarModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <table id="modal_table">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Componente Afectado</th>
+                            <th>Tipo de Falla</th>
+                            <th>Tiempo Perdido (Hrs)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="modal_table_body"></tbody>
+                </table>
             </div>
         </div>
     </div>
@@ -463,7 +504,7 @@ def generar_html_moderno(db_json):
             return true;
         });
 
-        // 1. Acumular Tiempo Operativo por Linea
+        // 1. Acumular Tiempo Operativo Completo por Línea
         let opTimeByLine = {};
         let totalOperativoGlobal = 0;
         currentLnData.forEach(d => {
@@ -472,18 +513,24 @@ def generar_html_moderno(db_json):
             totalOperativoGlobal += d.tpo_operativo_linea;
         });
 
-        // 2. Acumular Detenciones y Tiempo Perdido por Equipo
+        // 2. Acumular Detenciones, Horas y agrupar el historial atómico
         let eqMap = {};
         currentEqData.forEach(d => {
             let eqKey = d.planta + "|" + d.linea + "|" + d.equipo;
             if(!eqMap[eqKey]) {
-                eqMap[eqKey] = { p: d.planta, l: d.linea, e: d.equipo, det: 0, tpop: 0 };
+                eqMap[eqKey] = { p: d.planta, l: d.linea, e: d.equipo, det: 0, tpop: 0, eventos: [] };
             }
             eqMap[eqKey].det += d.detenciones;
             eqMap[eqKey].tpop += d.tpo_perdido_eq;
+            eqMap[eqKey].eventos.push({
+                fecha: d.fecha,
+                componente: d.componente,
+                tipo: d.tipo,
+                hrs: d.tpo_perdido_eq
+            });
         });
 
-        // 3. Calcular KPIs usando el tiempo total acumulado de la línea
+        // 3. Mapeo estructurado de KPIs
         tableDataFull = Object.values(eqMap).map(d => {
             let opTime = opTimeByLine[d.p + "|" + d.l] || 0;
             
@@ -497,19 +544,17 @@ def generar_html_moderno(db_json):
             return { ...d, opTime, mtbf, mttr, conf, mant, prob };
         });
 
-        // Calcular KPIs Globales
+        // Calcular Métricas Globales de Planta
         let eqCount = tableDataFull.length;
         let sumPerdidoGlobal = tableDataFull.reduce((s, d) => s + d.tpop, 0);
         let sumFallasGlobal = tableDataFull.reduce((s, d) => s + d.det, 0);
         
         let mtbfGlobal = sumFallasGlobal > 0 ? (totalOperativoGlobal / sumFallasGlobal) : 0;
         let mttrGlobal = sumFallasGlobal > 0 ? (sumPerdidoGlobal / sumFallasGlobal) : 0;
-        
-        let confGlobal = mtbfGlobal > 0 ? Math.exp(-120 / mtbfGlobal) * 100 : (sumFallasGlobal === 0 ? 100 : 0);
         let mantGlobal = mttrGlobal > 0 ? (1 - Math.exp(-1 / mttrGlobal)) * 100 : 100;
 
         document.getElementById('k_equipos').innerText = eqCount;
-        document.getElementById('k_conf').innerText = confGlobal.toFixed(1) + "%";
+        document.getElementById('k_detenciones').innerText = sumFallasGlobal; // KPI Corregido solicitado
         document.getElementById('k_hrs').innerText = sumPerdidoGlobal.toFixed(1);
         document.getElementById('k_mant').innerText = mantGlobal.toFixed(1) + "%";
 
@@ -588,30 +633,72 @@ def generar_html_moderno(db_json):
         tbody.innerHTML = '';
 
         let tbl = [...tableDataFull];
-
         if(search) {
             tbl = tbl.filter(d => `${d.p} ${d.l} ${d.e}`.toLowerCase().includes(search));
         }
 
-        tbl.sort((a,b) => a.conf - b.conf); // Los peores equipos primero
+        tbl.sort((a,b) => a.conf - b.conf); // Los peores equipos primero (Pareto-style)
 
         tbl.forEach(d => {
             let badgeClass = d.conf >= 80 ? 'b-ok' : (d.conf >= 50 ? 'b-warn' : 'b-danger');
+            
+            // Mejora Analítica: Marcado de alta criticidad si acumula muchas horas de falla
+            if (d.tpop >= 15) { badgeClass = 'b-critico'; }
+
             let tr = document.createElement('tr');
+            tr.className = "clickable-row";
+            tr.setAttribute("onclick", `abrirModalEventos('${d.p}', '${d.l}', '${d.e}')`);
+            
             tr.innerHTML = `
                 <td>${d.p}</td>
                 <td>${d.l}</td>
-                <td style="font-weight:700;">${d.e}</td>
+                <td style="font-weight:700; color: var(--text);">${d.e} ${d.tpop >= 15 ? '⚠️' : ''}</td>
                 <td>${d.det}</td>
-                <td>${d.tpop.toFixed(2)}</td>
+                <td style="font-weight:600;">${d.tpop.toFixed(2)}</td>
                 <td>${d.mtbf.toFixed(1)}</td>
                 <td>${d.mttr.toFixed(2)}</td>
-                <td><span class="badge ${badgeClass}">${d.conf.toFixed(1)}%</span></td>
+                <td><span class="badge ${badgeClass}">${d.tpop >= 15 && d.conf < 1 ? 'High Impact' : d.conf.toFixed(1) + '%'}</span></td>
                 <td>${d.mant.toFixed(1)}%</td>
                 <td>${d.prob.toFixed(1)}%</td>
             `;
             tbody.appendChild(tr);
         });
+    }
+
+    // --- FUNCIONES CONTROLADORAS DEL MODAL DRILL-DOWN ---
+    function abrirModalEventos(planta, linea, equipo) {
+        const eqData = tableDataFull.find(x => x.p === planta && x.l === linea && x.e === equipo);
+        if(!eqData) return;
+
+        document.getElementById('modal_titulo').innerText = `Historial de Detenciones: ${eqData.e}`;
+        document.getElementById('modal_subtitulo').innerText = `Planta: ${eqData.p}   |   Línea de Proceso: ${eqData.l}`;
+        
+        const mBody = document.getElementById('modal_table_body');
+        mBody.innerHTML = '';
+
+        // Ordenar los eventos del modal poniendo las detenciones más largas primero
+        let eventosOrdenados = [...eqData.eventos].sort((a, b) => b.hrs - a.hrs);
+
+        eventosOrdenados.forEach(ev => {
+            let tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td style="font-weight: 600; color: var(--secondary);">${ev.fecha}</td>
+                <td>${ev.componente}</td>
+                <td><span style="font-size:0.8rem; font-weight:500;">${ev.tipo}</span></td>
+                <td style="font-weight: 700; color: var(--danger);">${ev.hrs.toFixed(2)} hrs</td>
+            `;
+            mBody.appendChild(tr);
+        });
+
+        document.getElementById('modal_overlay').style.display = 'flex';
+    }
+
+    function cerrarModal() {
+        document.getElementById('modal_overlay').style.display = 'none';
+    }
+
+    function cerrarModalExterno(e) {
+        if(e.target.id === "modal_overlay") cerrarModal();
     }
 
     let sortAsc = true;
@@ -644,7 +731,7 @@ def generar_html_moderno(db_json):
             "Planta": d.p, "Línea": d.l, "Equipo": d.e,
             "Cant. Detenciones": d.det, "Tpo Perdido (Hrs)": d.tpop,
             "MTBF": d.mtbf, "MTTR": d.mttr, 
-            "Confiabilidad (%)": d.conf, "Mantenibilidad (%)": d.mant, "Prob Falla (%)": d.prob
+            "Mantenibilidad (%)": d.mant, "Prob Falla (%)": d.prob
         }));
         const ws = XLSX.utils.json_to_sheet(exportData);
         const wb = XLSX.utils.book_new();
