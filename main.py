@@ -621,16 +621,52 @@ function buildFilters() {
   document.getElementById('f_sem_desde').innerHTML = htmlDesde;
   document.getElementById('f_sem_hasta').innerHTML = htmlHasta;
 
-  const createSelect = (id, label, options) => {
-    let sel = `<div class="f-group"><label>${label}</label><select id="${id}" onchange="applyFilters()"><option value="ALL">Todas</option>`;
-    options.sort().forEach(o => sel += `<option value="${o}">${o}</option>`);
-    return sel + `</select></div>`;
-  };
+  let plantas = [...new Set(baseLn.map(x => x.planta))].sort();
+  let lineas = [...new Set(baseLn.map(x => x.linea))].sort();
 
-  let htmlDyn = '';
-  htmlDyn += createSelect('f_planta', '🏭 Planta',  [...new Set(baseLn.map(x => x.planta))]);
-  htmlDyn += createSelect('f_linea',  '🔧 Línea',   [...new Set(baseLn.map(x => x.linea))]);
+  let htmlDyn = `
+    <div class="f-group">
+      <label>🏭 Planta</label>
+      <select id="f_planta" onchange="actualizarFiltroLinea()">
+        <option value="ALL">Todas</option>
+        ${plantas.map(p => `<option value="${p}">${p}</option>`).join('')}
+      </select>
+    </div>
+    <div class="f-group">
+      <label>🔧 Línea</label>
+      <select id="f_linea" onchange="applyFilters()">
+        <option value="ALL">Todas</option>
+        ${lineas.map(l => `<option value="${l}">${l}</option>`).join('')}
+      </select>
+    </div>
+  `;
   document.getElementById('filters_dynamic').innerHTML = htmlDyn;
+}
+
+function actualizarFiltroLinea() {
+  let baseLn = recordsLn.filter(d => isCarnesTheme ? d.super_planta === 'Carnes' : d.super_planta === 'Masas');
+  const plantaSeleccionada = document.getElementById('f_planta').value;
+
+  if (plantaSeleccionada !== 'ALL') {
+    baseLn = baseLn.filter(d => d.planta === plantaSeleccionada);
+  }
+
+  let lineas = [...new Set(baseLn.map(x => x.linea))].sort();
+  let comboLinea = document.getElementById('f_linea');
+  let seleccionActual = comboLinea.value;
+
+  let html = '<option value="ALL">Todas</option>';
+  lineas.forEach(l => html += `<option value="${l}">${l}</option>`);
+  comboLinea.innerHTML = html;
+
+  // Si la línea seleccionada antes aún existe para la nueva planta, se mantiene. Si no, vuelve a 'Todas'
+  if (lineas.includes(seleccionActual)) {
+    comboLinea.value = seleccionActual;
+  } else {
+    comboLinea.value = 'ALL';
+  }
+
+  applyFilters();
 }
 
 function applyFilters() {
