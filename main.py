@@ -26,13 +26,11 @@ def buscar_columna_linea(df):
 
 def buscar_columna_equipo(df, planta_nombre):
     planta_lower = str(planta_nombre).lower()
-    # Para la planta de Carnes, Mercadeo y Molida, el equipo viene explícitamente en 'detalle'
     if "carne" in planta_lower or "mercadeo" in planta_lower or "molida" in planta_lower:
         for c in df.columns:
             if str(c).strip().lower() == 'detalle':
                 return c
                 
-    # Buscador general y fallback (mantiene lógica intacta para Masas)
     for c in df.columns:
         cl = str(c).strip().lower()
         if cl in ['equipo', 'componente', 'detalle']:
@@ -47,13 +45,11 @@ def buscar_columna_semana(df):
     return None
 
 def buscar_tiempo_detencion_hr(df, super_planta):
-    # Reglas explícitas
     for c in df.columns:
         cl = str(c).lower()
         if super_planta == 'Carnes' and 'tpo detenciones' in cl and 'hr' in cl:
             return c
 
-    # Buscador general (fallback)
     for c in df.columns:
         if 'detencion' in str(c).lower() and 'hr' in str(c).lower():
             return c
@@ -76,7 +72,6 @@ def limpiar_semana(serie):
     return resultado.fillna(-1).astype(int)
 
 def buscar_columna_tiempo_plan(df, super_planta):
-    # Reglas explícitas
     for c in df.columns:
         cl = str(c).lower().strip()
         if super_planta == 'Carnes' and 'tpo hr plan' in cl:
@@ -84,7 +79,6 @@ def buscar_columna_tiempo_plan(df, super_planta):
         if super_planta == 'Masas' and 'tpo disponible' in cl and 'hr' in cl:
             return c
 
-    # Buscador general (fallback)
     cols_lower = [str(c).lower().replace(' ', ' ').strip() for c in df.columns]
     for i, c in enumerate(cols_lower):
         if (' plan' in c or 'disponible' in c) and 'hr' in c:
@@ -120,7 +114,6 @@ def procesar_datos_confiabilidad():
     datos_lineas = []
     datos_acciones = {}
 
-    # --- LECTURA DEL EXCEL DE ACCIONES CORRECTIVAS ---
     archivo_acciones = next((f for f in archivos if 'acciones' in f.lower()), None)
     if archivo_acciones:
         print(f"\n📝 Leyendo Acciones Correctivas desde: {archivo_acciones}")
@@ -147,7 +140,6 @@ def procesar_datos_confiabilidad():
         except Exception as e:
             print(f"  ❌ Error leyendo archivo de acciones: {e}")
 
-    # --- LECTURA DE LOS EXCEL DE CONFIABILIDAD ---
     for archivo_nombre in archivos:
         if 'acciones' in archivo_nombre.lower(): continue
 
@@ -168,14 +160,12 @@ def procesar_datos_confiabilidad():
             planta_nombre = re.sub(r'(?i)confiabilidad', '', archivo_nombre)
             planta_nombre = re.sub(r'(?i)\.xlsx', '', planta_nombre).strip()
 
-            # Clasificación de super_planta extendida para incluir mercadeo y molida en la rama Carnes
             planta_lower = planta_nombre.lower()
             if "carne" in planta_lower or "mercadeo" in planta_lower or "molida" in planta_lower:
                 super_planta = "Carnes"
             else:
                 super_planta = "Masas"
 
-            # --- LIMPIEZA DETENCIONES ---
             col_equipo      = buscar_columna_equipo(df_det, planta_nombre)
             col_semana_det  = buscar_columna_semana(df_det)
             col_linea_det   = buscar_columna_linea(df_det)
@@ -198,7 +188,6 @@ def procesar_datos_confiabilidad():
                 tpo_perdido_linea=('Hrs_Perdidas', 'sum')
             ).reset_index()
 
-            # --- LIMPIEZA TIEMPOS PLANIFICADOS Y OPERATIVOS ---
             col_semana_tpo  = buscar_columna_semana(df_tpo)
             col_linea_tpo   = buscar_columna_linea(df_tpo)
             col_tpo_oper    = buscar_columna_tiempo_oper(df_tpo)
@@ -222,7 +211,6 @@ def procesar_datos_confiabilidad():
                 tpo_plan_linea=('Hrs_Plan', 'sum')
             ).reset_index()
 
-            # --- CRUCE MAESTRO ---
             linea_merged = pd.merge(agrup_tpo_linea, agrup_det_linea, on=['Linea_Clean', 'Semana_Clean'], how='outer')
             linea_merged['tpo_perdido_linea']   = linea_merged.get('tpo_perdido_linea',   pd.Series([0] * len(linea_merged))).fillna(0)
             linea_merged['tpo_operativo_linea'] = linea_merged.get('tpo_operativo_linea', pd.Series([0] * len(linea_merged))).fillna(0)
@@ -452,10 +440,51 @@ body.theme-carnes .tab-btn.active { color: #A93226; border-bottom-color: #A93226
 .bottom-section.tema-molida { background: #4A2511; }
 
 .section-label { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:1px; color:rgba(255,255,255,0.7); margin-bottom:8px; display:block; }
-.kpis-planta { display:flex; gap:15px; font-size:10px; align-items:center; background: rgba(0,0,0,0.2); padding: 8px 12px; border-radius: 6px; flex-wrap: wrap; margin-bottom: 20px; }
-.kpis-planta span strong { font-size: 12px; color:#fff; margin-left: 4px; }
 .lines-grid { display: flex; flex-wrap: wrap; gap: 20px; }
 .line-item { flex: 1; min-width: 220px; }
+
+/* --- CONTENEDORES PARA ENCABEZADO DIVIDIDO Y ROTATIVO --- */
+.indicators-header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    margin-bottom: 20px;
+    align-items: stretch;
+}
+.zona-block {
+    flex: 1 1 320px;
+    display: flex;
+    flex-direction: column;
+}
+.line-rotator-block {
+    flex: 1 1 320px;
+    display: flex;
+    flex-direction: column;
+    border-left: 2px solid rgba(255,255,255,0.1);
+    padding-left: 20px;
+}
+.kpis-planta { 
+    display:flex; gap:12px; font-size:10px; align-items:center; 
+    background: rgba(0,0,0,0.25); padding: 8px 12px; border-radius: 6px; 
+    flex-wrap: wrap; flex:1;
+}
+.kpis-planta span strong { font-size: 12px; color:#fff; margin-left: 3px; }
+
+.kpis-rotator {
+    display:flex; gap:12px; font-size:10px; align-items:center; 
+    background: rgba(255,255,255,0.1); padding: 8px 12px; border-radius: 6px; 
+    flex-wrap: wrap; transition: opacity 0.3s ease; flex:1;
+}
+.kpis-rotator span strong { font-size: 12px; color:#fff; margin-left: 3px; }
+
+@media (max-width: 768px) {
+    .line-rotator-block {
+        border-left: none;
+        border-top: 2px solid rgba(255,255,255,0.1);
+        padding-left: 0;
+        padding-top: 15px;
+    }
+}
 </style>
 </head>
 <body>
@@ -595,6 +624,10 @@ let currentLnData  = [];
 let tableDataFull  = [];
 let chartInstances = {};
 
+// Manejadores globales para los rotadores
+window.rotatorIntervals = [];
+window.rotatorData = {};
+
 function toggleTheme() {
   isCarnesTheme = document.getElementById('theme_toggle').checked;
   if (isCarnesTheme) {
@@ -659,7 +692,6 @@ function actualizarFiltroLinea() {
   lineas.forEach(l => html += `<option value="${l}">${l}</option>`);
   comboLinea.innerHTML = html;
 
-  // Si la línea seleccionada antes aún existe para la nueva planta, se mantiene. Si no, vuelve a 'Todas'
   if (lineas.includes(seleccionActual)) {
     comboLinea.value = seleccionActual;
   } else {
@@ -909,6 +941,13 @@ function switchTab(tab) {
 }
 
 function renderResumen() {
+  // 1. Limpiar intervalos previos del rotador
+  if (window.rotatorIntervals) {
+      window.rotatorIntervals.forEach(clearInterval);
+  }
+  window.rotatorIntervals = [];
+  window.rotatorData = {};
+
   const el = document.getElementById('resumen_content');
   if (!currentLnData.length) { el.innerHTML = '<p style="padding:30px;color:var(--text-muted);">Sin datos para el rango seleccionado.</p>'; return; }
 
@@ -987,14 +1026,33 @@ function renderResumen() {
     const lineas = lnByPlanta[planta];
     const eqs    = Object.values(eqByPlanta[planta] || {});
 
+    // Calcular KPI exactos para CADA LÍNEA
     const lineaStats = Object.entries(lineas).map(([ln, d]) => {
       const lnDet  = eqs.filter(e => e.linea === ln).reduce((s,e) => s + e.det, 0);
       const mtbf   = lnDet > 0 ? d.op / lnDet : 0;
       const prob   = mtbf > 0 ? (1 - Math.exp(-120 / mtbf)) * 100 : (lnDet > 0 ? 100 : 0);
       const perdido = eqs.filter(e => e.linea === ln).reduce((s,e) => s + e.hrs, 0);
-      return { ln, op: d.op, pl: d.pl, perdido, prob };
+      
+      const mttr = lnDet > 0 ? perdido / lnDet : 0;
+      const conf = mtbf > 0 ? Math.exp(-120 / mtbf) * 100 : (lnDet === 0 ? 100 : 0);
+      const mant = mttr > 0 ? (1 - Math.exp(-1 / mttr)) * 100 : 100;
+
+      return { ln, op: d.op, pl: d.pl, perdido, prob, mtbf, mttr, conf, mant };
     }).sort((a,b) => b.prob - a.prob);
 
+    // Preparar info del Rotador por Planta
+    const pId = planta.replace(/\s+/g,'_');
+    window.rotatorData[pId] = lineaStats.map(s => {
+        let lnShort = s.ln.replace('LINEA','L').replace('LÍNEA','L').trim().substring(0,8);
+        return `<span style="color:#A9CCE3; font-weight:900; font-size:11px; margin-right:8px; border-right:1px solid rgba(255,255,255,0.2); padding-right:10px; display:inline-block;">LÍNEA ${lnShort}</span>` +
+               `<span>MTBF: <strong>${s.mtbf.toFixed(1)}h</strong></span>` +
+               `<span>MTTR: <strong>${s.mttr.toFixed(2)}h</strong></span>` +
+               `<span>Conf: <strong>${s.conf.toFixed(1)}%</strong></span>` +
+               `<span>Mant: <strong>${s.mant.toFixed(1)}%</strong></span>` +
+               `<span>Pb. Falla: <strong>${s.prob.toFixed(1)}%</strong></span>`;
+    });
+
+    // Cálculos globales de la planta
     const totalEquipos = eqs.length;
     const promMTBF = totalEquipos > 0 ? eqs.reduce((s, e) => {
         const lnOp = lineas[e.linea]?.op || 0;
@@ -1158,13 +1216,26 @@ function renderResumen() {
         </div>
 
         <div class="bottom-section ${tema}">
-          <span class="section-label">INDICADORES ZONA:</span>
-          <div class="kpis-planta">
-              <span>MTBF: <strong>${promMTBF.toFixed(1)}h</strong></span>
-              <span>MTTR: <strong>${promMTTR.toFixed(2)}h</strong></span>
-              <span>Conf: <strong>${promConf.toFixed(1)}%</strong></span>
-              <span>Mant: <strong>${promMant.toFixed(1)}%</strong></span>
-              <span>Pb. Falla: <strong>${promProb.toFixed(1)}%</strong></span>
+          
+          <div class="indicators-header">
+              
+              <div class="zona-block">
+                  <span class="section-label">Indicadores zona 2026</span>
+                  <div class="kpis-planta">
+                      <span>MTBF: <strong>${promMTBF.toFixed(1)}h</strong></span>
+                      <span>MTTR: <strong>${promMTTR.toFixed(2)}h</strong></span>
+                      <span>Conf: <strong>${promConf.toFixed(1)}%</strong></span>
+                      <span>Mant: <strong>${promMant.toFixed(1)}%</strong></span>
+                      <span>Pb. Falla: <strong>${promProb.toFixed(1)}%</strong></span>
+                  </div>
+              </div>
+
+              <div class="line-rotator-block">
+                  <span class="section-label">Indicadores por Línea (Rotativo)</span>
+                  <div class="kpis-rotator" id="rotator_${pId}">
+                      </div>
+              </div>
+
           </div>
 
           <span class="section-label">ESTADO POR LÍNEA DE PRODUCCIÓN</span>
@@ -1176,6 +1247,36 @@ function renderResumen() {
   });
 
   el.innerHTML = html;
+
+  // 2. Iniciar intervalos dinámicos para los rotadores
+  Object.keys(window.rotatorData).forEach(pid => {
+      const container = document.getElementById('rotator_' + pid);
+      const data = window.rotatorData[pid];
+      
+      if (container && data.length > 0) {
+          let i = 0;
+          container.innerHTML = data[i]; // Mostrar el primero inmediatamente
+          
+          if (data.length > 1) {
+              const intv = setInterval(() => {
+                  // Efecto fade out
+                  container.style.opacity = '0';
+                  
+                  setTimeout(() => {
+                      i = (i + 1) % data.length;
+                      container.innerHTML = data[i];
+                      // Efecto fade in
+                      container.style.opacity = '1';
+                  }, 300); // Esperar 300ms oculto antes de cambiar el texto
+              }, 2500); // Rota cada 2.5 segundos
+              
+              window.rotatorIntervals.push(intv);
+          }
+      } else if (container) {
+          container.innerHTML = "<span>Sin datos de líneas</span>";
+      }
+  });
+
 }
 </script>
 </body>
