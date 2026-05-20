@@ -130,8 +130,9 @@ body.theme-carnes .tab-btn.active { color: #A93226; border-bottom-color: #A93226
 .bottom-section.tema-carnes { background: #4A0E0E; }
 .bottom-section.tema-dely { background: #2C4A3E; }
 .bottom-section.tema-molida { background: #4A2511; }
-.bottom-title { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:1px; color:rgba(255,255,255,0.7); margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;}
-.bottom-title strong { font-size: 16px; color:#fff; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 4px;}
+.bottom-title { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:1px; color:rgba(255,255,255,0.7); margin-bottom:15px; display:flex; justify-content:space-between; align-items:center; flex-wrap: wrap; gap:10px;}
+.kpis-planta { display:flex; gap:12px; font-size:9px; align-items:center; background: rgba(0,0,0,0.15); padding: 4px 10px; border-radius: 6px; flex-wrap: wrap;}
+.kpis-planta span strong { font-size: 11px; color:#fff; margin-left: 3px; }
 .lines-grid { display: flex; flex-wrap: wrap; gap: 20px; }
 .line-item { flex: 1; min-width: 220px; }
 </style>
@@ -174,7 +175,7 @@ body.theme-carnes .tab-btn.active { color: #A93226; border-bottom-color: #A93226
     <div style="padding:20px;border-top:1px solid var(--border);">
       <button class="btn-export" onclick="descargarExcel()">⬇️ Exportar Data a Excel</button>
       <div style="text-align:center;font-size:0.7rem;color:var(--text-muted);margin-top:15px;font-weight:600;">
-        Actualizado: 19/05/2026 17:06
+        Actualizado: 19/05/2026 22:59
       </div>
     </div>
   </div>
@@ -637,13 +638,27 @@ function renderResumen() {
       return { ln, op: d.op, pl: d.pl, perdido, prob };
     }).sort((a,b) => b.prob - a.prob);
 
-    // CÁLCULO PROMEDIO PLANTA CORREGIDO (Promedio de todos los Equipos)
-    const allEqStats = eqs.map(e => {
+    // NUEVOS CÁLCULOS PROMEDIO PLANTA
+    const totalEquipos = eqs.length;
+    const promMTBF = totalEquipos > 0 ? eqs.reduce((s, e) => {
         const lnOp = lineas[e.linea]?.op || 0;
-        const mtbf = e.det > 0 ? lnOp / e.det : 0;
-        return mtbf > 0 ? (1 - Math.exp(-120/mtbf))*100 : (e.det > 0 ? 100 : 0);
-    });
-    const avgProb = allEqStats.length ? allEqStats.reduce((s, p) => s + p, 0) / allEqStats.length : 0;   
+        return s + (e.det > 0 ? (lnOp / e.det) : 0);
+    }, 0) / totalEquipos : 0;
+
+    const promMTTR = totalEquipos > 0 ? eqs.reduce((s, e) => s + (e.det > 0 ? (e.hrs / e.det) : 0), 0) / totalEquipos : 0;
+
+    const promConf = totalEquipos > 0 ? eqs.reduce((s, e) => {
+        const lnOp = lineas[e.linea]?.op || 0;
+        const mtbf = e.det > 0 ? (lnOp / e.det) : 0;
+        return s + (mtbf > 0 ? Math.exp(-120 / mtbf) * 100 : (e.det === 0 ? 100 : 0));
+    }, 0) / totalEquipos : 0;
+
+    const promMant = totalEquipos > 0 ? eqs.reduce((s, e) => {
+        const mttr = e.det > 0 ? (e.hrs / e.det) : 0;
+        return s + (mttr > 0 ? (1 - Math.exp(-1 / mttr)) * 100 : 100);
+    }, 0) / totalEquipos : 0;
+
+    const promProb = 100 - promConf;
     
     const maxProb = Math.max(...lineaStats.map(x => x.prob), 1);
 
@@ -793,7 +808,13 @@ function renderResumen() {
         <div class="bottom-section ${tema}">
           <div class="bottom-title">
             <span>Estado por Línea de Producción</span>
-            <span>PROMEDIO PLANTA: <strong>${avgProb.toFixed(1).replace('.',',')}%</strong></span>
+            <div class="kpis-planta">
+                <span>MTBF: <strong>${promMTBF.toFixed(1)}h</strong></span>
+                <span>MTTR: <strong>${promMTTR.toFixed(2)}h</strong></span>
+                <span>Conf: <strong>${promConf.toFixed(1)}%</strong></span>
+                <span>Mant: <strong>${promMant.toFixed(1)}%</strong></span>
+                <span>Pb. Falla: <strong>${promProb.toFixed(1)}%</strong></span>
+            </div>
           </div>
           <div class="lines-grid">
             ${barras}
