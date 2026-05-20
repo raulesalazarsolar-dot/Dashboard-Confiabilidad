@@ -44,13 +44,10 @@ def buscar_columna_semana(df):
     return None
 
 def buscar_tiempo_detencion_hr(df, super_planta):
-    # Reglas explícitas
     for c in df.columns:
         cl = str(c).lower()
         if super_planta == 'Carnes' and 'tpo detenciones' in cl and 'hr' in cl:
             return c
-
-    # Buscador general (fallback)
     for c in df.columns:
         if 'detencion' in str(c).lower() and 'hr' in str(c).lower():
             return c
@@ -73,15 +70,12 @@ def limpiar_semana(serie):
     return resultado.fillna(-1).astype(int)
 
 def buscar_columna_tiempo_plan(df, super_planta):
-    # Reglas explícitas
     for c in df.columns:
         cl = str(c).lower().strip()
         if super_planta == 'Carnes' and 'tpo hr plan' in cl:
             return c
         if super_planta == 'Masas' and 'tpo disponible' in cl and 'hr' in cl:
             return c
-
-    # Buscador general (fallback)
     cols_lower = [str(c).lower().replace(' ', ' ').strip() for c in df.columns]
     for i, c in enumerate(cols_lower):
         if (' plan' in c or 'disponible' in c) and 'hr' in c:
@@ -117,7 +111,6 @@ def procesar_datos_confiabilidad():
     datos_lineas = []
     datos_acciones = {}
 
-    # --- LECTURA DEL EXCEL DE ACCIONES CORRECTIVAS ---
     archivo_acciones = next((f for f in archivos if 'acciones' in f.lower()), None)
     if archivo_acciones:
         print(f"\n📝 Leyendo Acciones Correctivas desde: {archivo_acciones}")
@@ -144,7 +137,6 @@ def procesar_datos_confiabilidad():
         except Exception as e:
             print(f"  ❌ Error leyendo archivo de acciones: {e}")
 
-    # --- LECTURA DE LOS EXCEL DE CONFIABILIDAD ---
     for archivo_nombre in archivos:
         if 'acciones' in archivo_nombre.lower(): continue
 
@@ -162,13 +154,11 @@ def procesar_datos_confiabilidad():
             df_det = pd.read_excel(excel, sheet_name=hoja_det)
             df_tpo = pd.read_excel(excel, sheet_name=hoja_tpo)
 
-            # Limpieza exhaustiva del nombre de la planta (quita "Confiabilidad" y ".xlsx")
             planta_nombre = re.sub(r'(?i)confiabilidad', '', archivo_nombre)
             planta_nombre = re.sub(r'(?i)\.xlsx', '', planta_nombre).strip()
 
             super_planta = "Carnes" if "carne" in planta_nombre.lower() else "Masas"
 
-            # --- LIMPIEZA DETENCIONES ---
             col_equipo      = buscar_columna_equipo(df_det, planta_nombre)
             col_semana_det  = buscar_columna_semana(df_det)
             col_linea_det   = buscar_columna_linea(df_det)
@@ -191,7 +181,6 @@ def procesar_datos_confiabilidad():
                 tpo_perdido_linea=('Hrs_Perdidas', 'sum')
             ).reset_index()
 
-            # --- LIMPIEZA TIEMPOS PLANIFICADOS Y OPERATIVOS ---
             col_semana_tpo  = buscar_columna_semana(df_tpo)
             col_linea_tpo   = buscar_columna_linea(df_tpo)
             col_tpo_oper    = buscar_columna_tiempo_oper(df_tpo)
@@ -215,7 +204,6 @@ def procesar_datos_confiabilidad():
                 tpo_plan_linea=('Hrs_Plan', 'sum')
             ).reset_index()
 
-            # --- CRUCE MAESTRO ---
             linea_merged = pd.merge(agrup_tpo_linea, agrup_det_linea, on=['Linea_Clean', 'Semana_Clean'], how='outer')
             linea_merged['tpo_perdido_linea']   = linea_merged.get('tpo_perdido_linea',   pd.Series([0] * len(linea_merged))).fillna(0)
             linea_merged['tpo_operativo_linea'] = linea_merged.get('tpo_operativo_linea', pd.Series([0] * len(linea_merged))).fillna(0)
@@ -410,7 +398,7 @@ body.theme-carnes .tab-btn.active { color: #A93226; border-bottom-color: #A93226
 .tab-panel { display: none; flex: 1; overflow: hidden; }
 .tab-panel.active { display: flex; }
 
-/* ── NUEVO DISEÑO RESUMEN V3 (VERDE ABAJO, TOP 3, ACUMULADOS) ── */
+/* ── NUEVO DISEÑO RESUMEN V3 ── */
 .resumen-panel { display:flex; flex-direction:column; padding: 20px 30px; overflow-y: auto; background: #F4F6FA; width:100%; gap: 25px;}
 .fila-planta-v3 { display:flex; flex-direction:column; background: #fff; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); overflow:hidden;}
 .top-section { padding: 20px 25px; }
@@ -430,8 +418,8 @@ body.theme-carnes .tab-btn.active { color: #A93226; border-bottom-color: #A93226
 .stat-box { text-align:center; border-radius:4px; padding:6px 4px; display:flex; flex-direction:column; justify-content:center; align-items:center; }
 .stat-val { font-size:14px; font-weight:800; line-height:1; }
 .stat-trend { font-size:9px; font-weight:800; margin-top: 3px; display:flex; align-items:center; gap:2px; }
-.trend-up { color: #C0392B; } /* Empeoró Falla */
-.trend-dn { color: #27AE60; } /* Mejoró Falla */
+.trend-up { color: #C0392B; } 
+.trend-dn { color: #27AE60; } 
 .trend-neu { color: #95A5A6; }
 .bg-red-light { background: #FEF0F0; }
 .bg-blue-light { background: #EEF4FF; }
@@ -443,9 +431,11 @@ body.theme-carnes .tab-btn.active { color: #A93226; border-bottom-color: #A93226
 .bottom-section.tema-carnes { background: #4A0E0E; }
 .bottom-section.tema-dely { background: #2C4A3E; }
 .bottom-section.tema-molida { background: #4A2511; }
-.bottom-title { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:1px; color:rgba(255,255,255,0.7); margin-bottom:15px; display:flex; justify-content:space-between; align-items:center; flex-wrap: wrap; gap:10px;}
-.kpis-planta { display:flex; gap:12px; font-size:9px; align-items:center; background: rgba(0,0,0,0.15); padding: 4px 10px; border-radius: 6px; flex-wrap: wrap;}
-.kpis-planta span strong { font-size: 11px; color:#fff; margin-left: 3px; }
+
+/* NUEVOS ESTILOS PARA LOS TÍTULOS Y KPIs APILADOS */
+.section-label { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:1px; color:rgba(255,255,255,0.7); margin-bottom:8px; display:block; }
+.kpis-planta { display:flex; gap:15px; font-size:10px; align-items:center; background: rgba(0,0,0,0.2); padding: 8px 12px; border-radius: 6px; flex-wrap: wrap; margin-bottom: 20px; }
+.kpis-planta span strong { font-size: 12px; color:#fff; margin-left: 4px; }
 .lines-grid { display: flex; flex-wrap: wrap; gap: 20px; }
 .line-item { flex: 1; min-width: 220px; }
 </style>
@@ -1119,16 +1109,16 @@ function renderResumen() {
         </div>
 
         <div class="bottom-section ${tema}">
-          <div class="bottom-title">
-            <span>Estado por Línea de Producción</span>
-            <div class="kpis-planta">
-                <span>MTBF: <strong>${promMTBF.toFixed(1)}h</strong></span>
-                <span>MTTR: <strong>${promMTTR.toFixed(2)}h</strong></span>
-                <span>Conf: <strong>${promConf.toFixed(1)}%</strong></span>
-                <span>Mant: <strong>${promMant.toFixed(1)}%</strong></span>
-                <span>Pb. Falla: <strong>${promProb.toFixed(1)}%</strong></span>
-            </div>
+          <span class="section-label">INDICADORES ZONA:</span>
+          <div class="kpis-planta">
+              <span>MTBF: <strong>${promMTBF.toFixed(1)}h</strong></span>
+              <span>MTTR: <strong>${promMTTR.toFixed(2)}h</strong></span>
+              <span>Conf: <strong>${promConf.toFixed(1)}%</strong></span>
+              <span>Mant: <strong>${promMant.toFixed(1)}%</strong></span>
+              <span>Pb. Falla: <strong>${promProb.toFixed(1)}%</strong></span>
           </div>
+
+          <span class="section-label">ESTADO POR LÍNEA DE PRODUCCIÓN</span>
           <div class="lines-grid">
             ${barras}
           </div>
