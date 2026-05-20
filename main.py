@@ -3,6 +3,7 @@ import json
 import math
 import shutil
 import re
+import base64
 import pandas as pd
 import gdown
 from datetime import datetime
@@ -14,6 +15,7 @@ from zoneinfo import ZoneInfo
 DRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/1xXeea_F6HTsI-Wfj7HP2KdCnzGtPIUQq?usp=sharing"
 DATA_DIR = "./data"
 OUTPUT_HTML = "index.html"
+AVATAR_IMG = "avatar_ways.png" # Guarda tu imagen sin fondo con este nombre en la misma carpeta
 
 # ==========================================
 # 2. BUSCADORES UNIVERSALES E INTELIGENTES Y MAPEO
@@ -325,6 +327,41 @@ def procesar_datos_confiabilidad():
 # ==========================================
 def generar_html_moderno(db_json):
     fecha_actual = datetime.now(ZoneInfo("America/Santiago")).strftime("%d/%m/%Y %H:%M")
+    
+    # Procesar imagen del Avatar si existe
+    avatar_base64 = ""
+    if os.path.exists(AVATAR_IMG):
+        try:
+            with open(AVATAR_IMG, "rb") as image_file:
+                avatar_base64 = base64.b64encode(image_file.read()).decode('utf-8')
+        except Exception as e:
+            print(f"⚠️ Error al leer imagen de avatar: {e}")
 
-    # Inyección directa de plantilla HTML autogenerada por partes...
-    # (El script guarda de forma completa y nativa el bloque HTML parametrizado)
+    html_template = """<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard Confiabilidad</title>
+<link rel="icon" type="image/x-icon" href="https://www.walmart.com/favicon.ico">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap');
+:root {
+  --primary: #0D2C54; --secondary: #3A4A5C; --accent: #0071CE;
+  --bg: #F2F6FC; --surface: #ffffff; --border: #DDE6F2;
+  --text: #0D2C54; --text-muted: #8899AA;
+  --success: #27AE60; --danger: #C0392B; --warning: #E67E22;
+}
+body.theme-carnes {
+  --primary: #4A0E0E; --secondary: #7f1d1d; --accent: #A93226;
+  --bg: #fef2f2; --border: #fecaca;
+}
+* { box-sizing: border-box; outline: none; font-family: 'DM Sans', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+body { background: var(--bg); color: var(--text); margin: 0; display: flex; flex-direction: column; min-height: 100vh; transition: background 0.4s; }
+.top-bar { background: var(--primary); color: white; padding: 0 25px; height: 65px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); z-index: 10; transition: background 0.4s; border-bottom:4px solid var(--accent); }
+.brand { display: flex; align-items: center; gap: 15px; }
+.brand h2 { margin: 0; font-size: 1.3rem; font-weight: 700; letter-spacing: 0.5px; }
+.brand span { opacity: 0.7; font-weight: 400; font-size: 1rem; border-left: 1px solid rgba(255,255,255,0.3); padding-left: 15px; }
+.planta-switch { display: flex; align-items: center; gap: 12px; font-
