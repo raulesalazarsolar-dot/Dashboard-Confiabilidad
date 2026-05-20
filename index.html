@@ -47,6 +47,12 @@ select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,113,206
 .rango-semanas span { font-weight: 700; color: var(--text-muted); }
 .btn-export { background: var(--surface); border: 2px solid var(--success); color: var(--success); padding: 10px; border-radius: 8px; cursor: pointer; font-weight: 700; width: 100%; display: flex; justify-content: center; gap: 8px; transition: 0.2s; margin-top: 10px; }
 .btn-export:hover { background: var(--success); color: white; }
+
+/* NUEVOS ESTILOS PARA TEAM BRANDING */
+.team-branding { margin-top: 30px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.team-branding img { max-width: 140px; height: auto; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1)); }
+.team-branding p { font-size: 0.75rem; font-weight: 800; color: var(--primary); text-transform: uppercase; letter-spacing: 0.5px; margin: 0; opacity: 0.9; }
+
 .content { flex: 1; padding: 30px; overflow-y: auto; display: flex; flex-direction: column; gap: 25px; }
 .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 15px; }
 .kpi-card { background: var(--surface); padding: 15px; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 2px 4px rgba(0,0,0,0.02); display: flex; flex-direction: column; gap: 5px; position: relative; overflow: hidden; }
@@ -136,46 +142,17 @@ body.theme-carnes .tab-btn.active { color: #A93226; border-bottom-color: #A93226
 .line-item { flex: 1; min-width: 220px; }
 
 /* --- CONTENEDORES PARA ENCABEZADO DIVIDIDO Y ROTATIVO --- */
-.indicators-header {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 20px;
-    margin-bottom: 20px;
-    align-items: stretch;
-}
-.zona-block {
-    flex: 1 1 320px;
-    display: flex;
-    flex-direction: column;
-}
-.line-rotator-block {
-    flex: 1 1 320px;
-    display: flex;
-    flex-direction: column;
-    border-left: 2px solid rgba(255,255,255,0.1);
-    padding-left: 20px;
-}
-.kpis-planta { 
-    display:flex; gap:12px; font-size:10px; align-items:center; 
-    background: rgba(0,0,0,0.25); padding: 8px 12px; border-radius: 6px; 
-    flex-wrap: wrap; flex:1;
-}
+.indicators-header { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 20px; align-items: stretch; }
+.zona-block { flex: 1 1 320px; display: flex; flex-direction: column; }
+.line-rotator-block { flex: 1 1 320px; display: flex; flex-direction: column; border-left: 2px solid rgba(255,255,255,0.1); padding-left: 20px; }
+.kpis-planta { display:flex; gap:12px; font-size:10px; align-items:center; background: rgba(0,0,0,0.25); padding: 8px 12px; border-radius: 6px; flex-wrap: wrap; flex:1; }
 .kpis-planta span strong { font-size: 12px; color:#fff; margin-left: 3px; }
 
-.kpis-rotator {
-    display:flex; gap:12px; font-size:10px; align-items:center; 
-    background: rgba(255,255,255,0.1); padding: 8px 12px; border-radius: 6px; 
-    flex-wrap: wrap; transition: opacity 0.3s ease; flex:1;
-}
+.kpis-rotator { display:flex; gap:12px; font-size:10px; align-items:center; background: rgba(255,255,255,0.1); padding: 8px 12px; border-radius: 6px; flex-wrap: wrap; transition: opacity 0.5s ease; flex:1; }
 .kpis-rotator span strong { font-size: 12px; color:#fff; margin-left: 3px; }
 
 @media (max-width: 768px) {
-    .line-rotator-block {
-        border-left: none;
-        border-top: 2px solid rgba(255,255,255,0.1);
-        padding-left: 0;
-        padding-top: 15px;
-    }
+    .line-rotator-block { border-left: none; border-top: 2px solid rgba(255,255,255,0.1); padding-left: 0; padding-top: 15px; }
 }
 </style>
 </head>
@@ -217,8 +194,14 @@ body.theme-carnes .tab-btn.active { color: #A93226; border-bottom-color: #A93226
     <div style="padding:20px;border-top:1px solid var(--border);">
       <button class="btn-export" onclick="descargarExcel()">⬇️ Exportar Data a Excel</button>
       <div style="text-align:center;font-size:0.7rem;color:var(--text-muted);margin-top:15px;font-weight:600;">
-        Actualizado: 20/05/2026 08:42
+        Actualizado: 20/05/2026 09:39
       </div>
+      
+      <div class="team-branding">
+          <img src="avatar_ways.png" alt="Ways 2026" onerror="this.style.display='none'">
+          <p>Equipo de Planificación Ways 2026</p>
+      </div>
+      
     </div>
   </div>
 
@@ -768,6 +751,7 @@ function renderResumen() {
     
     const maxProb = Math.max(...lineaStats.map(x => x.prob), 1);
 
+    // LIMITAR A TOP 3 CON REGLAS DE EXCLUSIÓN
     const top3 = eqs.map(e => {
       const lnOp  = lineas[e.linea]?.op || 0;
       const mtbf  = e.det > 0 ? lnOp / e.det : 0;
@@ -785,7 +769,22 @@ function renderResumen() {
       const probPrev = mtbfPrev > 0 ? (1 - Math.exp(-120/mtbfPrev))*100 : (detPrev>0?100:0);
 
       return { ...e, prob, mtbf, mttr, probPrev, mtbfPrev };
-    }).filter(e => e.det > 0).sort((a,b)=>b.prob-a.prob).slice(0,3);
+    }).filter(e => {
+        // Excluir equipos sin detenciones
+        if (e.det <= 0) return false;
+        
+        let eqStr = String(e.equipo).trim().toLowerCase();
+        let esCarnes = pKeyLowerCase.includes('carne') || pKeyLowerCase.includes('mercadeo') || pKeyLowerCase.includes('molida');
+        let esMasas = !esCarnes;
+
+        // Exclusión específica para Top 3 en Masas
+        if (esMasas && eqStr === '0') return false;
+        
+        // Exclusión específica para Top 3 en Carnes
+        if (esCarnes && (eqStr === '' || eqStr === 'nan' || eqStr === 'null' || eqStr === 'n/a')) return false;
+
+        return true;
+    }).sort((a,b)=>b.prob-a.prob).slice(0,3);
 
     const barras = lineaStats.map((s,i) => {
       const pct = (s.prob / Math.max(maxProb, 1) * 100).toFixed(1);
@@ -960,7 +959,7 @@ function renderResumen() {
                       // Efecto fade in
                       container.style.opacity = '1';
                   }, 300); // Esperar 300ms oculto antes de cambiar el texto
-              }, 2500); // Rota cada 2.5 segundos
+              }, 5000); // Rota cada 5 segundos
               
               window.rotatorIntervals.push(intv);
           }
