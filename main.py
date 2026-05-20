@@ -26,10 +26,13 @@ def buscar_columna_linea(df):
 
 def buscar_columna_equipo(df, planta_nombre):
     planta_lower = str(planta_nombre).lower()
-    if "mercadeo" in planta_lower:
+    # Para la planta de Carnes, Mercadeo y Molida, el equipo viene explícitamente en 'detalle'
+    if "carne" in planta_lower or "mercadeo" in planta_lower or "molida" in planta_lower:
         for c in df.columns:
             if str(c).strip().lower() == 'detalle':
                 return c
+                
+    # Buscador general y fallback (mantiene lógica intacta para Masas)
     for c in df.columns:
         cl = str(c).strip().lower()
         if cl in ['equipo', 'componente', 'detalle']:
@@ -44,10 +47,13 @@ def buscar_columna_semana(df):
     return None
 
 def buscar_tiempo_detencion_hr(df, super_planta):
+    # Reglas explícitas
     for c in df.columns:
         cl = str(c).lower()
         if super_planta == 'Carnes' and 'tpo detenciones' in cl and 'hr' in cl:
             return c
+
+    # Buscador general (fallback)
     for c in df.columns:
         if 'detencion' in str(c).lower() and 'hr' in str(c).lower():
             return c
@@ -70,12 +76,15 @@ def limpiar_semana(serie):
     return resultado.fillna(-1).astype(int)
 
 def buscar_columna_tiempo_plan(df, super_planta):
+    # Reglas explícitas
     for c in df.columns:
         cl = str(c).lower().strip()
         if super_planta == 'Carnes' and 'tpo hr plan' in cl:
             return c
         if super_planta == 'Masas' and 'tpo disponible' in cl and 'hr' in cl:
             return c
+
+    # Buscador general (fallback)
     cols_lower = [str(c).lower().replace(' ', ' ').strip() for c in df.columns]
     for i, c in enumerate(cols_lower):
         if (' plan' in c or 'disponible' in c) and 'hr' in c:
@@ -111,6 +120,7 @@ def procesar_datos_confiabilidad():
     datos_lineas = []
     datos_acciones = {}
 
+    # --- LECTURA DEL EXCEL DE ACCIONES CORRECTIVAS ---
     archivo_acciones = next((f for f in archivos if 'acciones' in f.lower()), None)
     if archivo_acciones:
         print(f"\n📝 Leyendo Acciones Correctivas desde: {archivo_acciones}")
@@ -137,6 +147,7 @@ def procesar_datos_confiabilidad():
         except Exception as e:
             print(f"  ❌ Error leyendo archivo de acciones: {e}")
 
+    # --- LECTURA DE LOS EXCEL DE CONFIABILIDAD ---
     for archivo_nombre in archivos:
         if 'acciones' in archivo_nombre.lower(): continue
 
@@ -157,15 +168,21 @@ def procesar_datos_confiabilidad():
             planta_nombre = re.sub(r'(?i)confiabilidad', '', archivo_nombre)
             planta_nombre = re.sub(r'(?i)\.xlsx', '', planta_nombre).strip()
 
-            super_planta = "Carnes" if "carne" in planta_nombre.lower() else "Masas"
+            # Clasificación de super_planta extendida para incluir mercadeo y molida en la rama Carnes
+            planta_lower = planta_nombre.lower()
+            if "carne" in planta_lower or "mercadeo" in planta_lower or "molida" in planta_lower:
+                super_planta = "Carnes"
+            else:
+                super_planta = "Masas"
 
+            # --- LIMPIEZA DETENCIONES ---
             col_equipo      = buscar_columna_equipo(df_det, planta_nombre)
             col_semana_det  = buscar_columna_semana(df_det)
             col_linea_det   = buscar_columna_linea(df_det)
             col_tpo_det     = buscar_tiempo_detencion_hr(df_det, super_planta)
 
             if not all([col_equipo, col_semana_det, col_linea_det, col_tpo_det]):
-                print("  ❌ Faltan columnas vitales en FEM. Saltando...")
+                print(f"  ❌ Faltan columnas vitales en FEM para {planta_nombre}. Saltando...")
                 continue
 
             df_det = df_det.dropna(subset=[col_equipo, col_semana_det, col_linea_det])
@@ -181,6 +198,7 @@ def procesar_datos_confiabilidad():
                 tpo_perdido_linea=('Hrs_Perdidas', 'sum')
             ).reset_index()
 
+            # --- LIMPIEZA TIEMPOS PLANIFICADOS Y OPERATIVOS ---
             col_semana_tpo  = buscar_columna_semana(df_tpo)
             col_linea_tpo   = buscar_columna_linea(df_tpo)
             col_tpo_oper    = buscar_columna_tiempo_oper(df_tpo)
@@ -204,6 +222,7 @@ def procesar_datos_confiabilidad():
                 tpo_plan_linea=('Hrs_Plan', 'sum')
             ).reset_index()
 
+            # --- CRUCE MAESTRO ---
             linea_merged = pd.merge(agrup_tpo_linea, agrup_det_linea, on=['Linea_Clean', 'Semana_Clean'], how='outer')
             linea_merged['tpo_perdido_linea']   = linea_merged.get('tpo_perdido_linea',   pd.Series([0] * len(linea_merged))).fillna(0)
             linea_merged['tpo_operativo_linea'] = linea_merged.get('tpo_operativo_linea', pd.Series([0] * len(linea_merged))).fillna(0)
@@ -432,7 +451,6 @@ body.theme-carnes .tab-btn.active { color: #A93226; border-bottom-color: #A93226
 .bottom-section.tema-dely { background: #2C4A3E; }
 .bottom-section.tema-molida { background: #4A2511; }
 
-/* NUEVOS ESTILOS PARA LOS TÍTULOS Y KPIs APILADOS */
 .section-label { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:1px; color:rgba(255,255,255,0.7); margin-bottom:8px; display:block; }
 .kpis-planta { display:flex; gap:15px; font-size:10px; align-items:center; background: rgba(0,0,0,0.2); padding: 8px 12px; border-radius: 6px; flex-wrap: wrap; margin-bottom: 20px; }
 .kpis-planta span strong { font-size: 12px; color:#fff; margin-left: 4px; }
@@ -941,7 +959,6 @@ function renderResumen() {
       return { ln, op: d.op, pl: d.pl, perdido, prob };
     }).sort((a,b) => b.prob - a.prob);
 
-    // NUEVOS CÁLCULOS PROMEDIO PLANTA
     const totalEquipos = eqs.length;
     const promMTBF = totalEquipos > 0 ? eqs.reduce((s, e) => {
         const lnOp = lineas[e.linea]?.op || 0;
@@ -965,14 +982,12 @@ function renderResumen() {
     
     const maxProb = Math.max(...lineaStats.map(x => x.prob), 1);
 
-    // LIMITAR A TOP 3
     const top3 = eqs.map(e => {
       const lnOp  = lineas[e.linea]?.op || 0;
       const mtbf  = e.det > 0 ? lnOp / e.det : 0;
       const mttr  = e.det > 0 ? e.hrs / e.det : 0;
       const prob  = mtbf > 0 ? (1 - Math.exp(-120/mtbf))*100 : (e.det>0?100:0);
 
-      // Calcular previos para comparativa
       let detPrev = 0, hrsPrev = 0, opPrev = 0;
       if (eqByPlantaPrev[planta] && eqByPlantaPrev[planta][e.linea + '|||' + e.equipo]) {
           detPrev = eqByPlantaPrev[planta][e.linea + '|||' + e.equipo].det;
@@ -1036,7 +1051,6 @@ function renderResumen() {
         }
       }
 
-      // Lógica de flechas para Pb. Falla
       let probDif = e.prob - e.probPrev;
       let probArrow = "";
       if (e.probPrev > 0 || e.mtbfPrev > 0) {
@@ -1047,7 +1061,6 @@ function renderResumen() {
           probArrow = `<span class="stat-trend trend-neu">N/A Ant.</span>`;
       }
 
-      // Lógica de flechas para MTBF
       let mtbfDif = e.mtbf - e.mtbfPrev;
       let mtbfArrow = "";
       if (e.probPrev > 0 || e.mtbfPrev > 0) {
