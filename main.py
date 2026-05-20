@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 DRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/1xXeea_F6HTsI-Wfj7HP2KdCnzGtPIUQq?usp=sharing"
 DATA_DIR = "./data"
 OUTPUT_HTML = "index.html"
-AVATAR_IMG = "avatar_ways.png" # Guarda tu imagen sin fondo con este nombre en la misma carpeta
+AVATAR_IMG = os.path.join(DATA_DIR, "avatar.png") # Ahora busca la imagen que se descarga de Drive automáticamente
 
 # ==========================================
 # 2. BUSCADORES UNIVERSALES E INTELIGENTES Y MAPEO
@@ -88,7 +88,7 @@ def buscar_columna_tiempo_oper(df):
     return None
 
 def limpiar_semana(serie):
-    resultado = pd.to_numeric(serie, errors='coerce')          
+    resultado = pd.to_numeric(serie, errors='coerce')         
     mask_nan = resultado.isna()
     if mask_nan.any():                                         
         extraidos = serie[mask_nan].astype(str).str.extract(r'(\d{1,2})')[0]
@@ -336,6 +336,8 @@ def generar_html_moderno(db_json):
                 avatar_base64 = base64.b64encode(image_file.read()).decode('utf-8')
         except Exception as e:
             print(f"⚠️ Error al leer imagen de avatar: {e}")
+    else:
+        print(f"⚠️ No se encontró la imagen del avatar en {AVATAR_IMG}")
 
     html_template = """<!DOCTYPE html>
 <html lang="es">
@@ -392,7 +394,7 @@ select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,113,206
 body.theme-carnes .team-branding { background: #FFF5F5; }
 .team-branding img { max-width: 110px; height: auto; transition: transform 0.3s; }
 .team-branding img:hover { transform: scale(1.05); }
-.team-branding p { font-size: 0.75rem; font-weight: 800; color: var(--text); text-transform: uppercase; letter-spacing: 0.5px; margin: 0; line-height: 1.3; }
+.team-branding p { font-size: 0.75rem; font-weight: 800; color: var(--text); text-transform: uppercase; letter-spacing: 0.5px; margin: 0; margin-bottom: 6px; line-height: 1.3; }
 
 .content { flex: 1; padding: 30px; overflow-y: auto; display: flex; flex-direction: column; gap: 25px; }
 .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 15px; }
@@ -535,8 +537,8 @@ body.theme-carnes .tab-btn.active { color: #A93226; border-bottom-color: #A93226
     <div style="padding:20px; border-top:1px solid var(--border); display:flex; flex-direction:column; align-items:center; width:100%;">
       
       <div class="team-branding" id="branding_div">
+          <p>Equipo Planificación<br>WAYS 2026</p>
           <img src="data:image/png;base64,__AVATAR_B64__" alt="Ways 2026" id="avatar_img">
-          <p>Equipo de Planificación<br>Ways 2026</p>
       </div>
 
       <button class="btn-export" onclick="descargarExcel()">⬇️ Exportar Data a Excel</button>
@@ -1031,10 +1033,16 @@ function renderResumen() {
     let tema = 'tema-masas';
     let temaPillColor = '#0071CE';
     
-    if (pKeyLowerCase.includes('carne') || pKeyLowerCase.includes('mercadeo')) { 
+    // Lógica para detectar si pertenece al tema Carnes
+    const esCarnesTema = pKeyLowerCase.includes('carne') || pKeyLowerCase.includes('mercadeo') || pKeyLowerCase.includes('molida');
+    const esMasasTema = !esCarnesTema;
+    const limiteTop = esCarnesTema ? 6 : 3;
+    
+    if (esCarnesTema) { 
         tema = 'tema-carnes'; 
         temaPillColor = '#C0392B'; 
-    } else if (pKeyLowerCase.includes('dely')) { 
+    } 
+    if (pKeyLowerCase.includes('dely')) { 
         tema = 'tema-dely'; 
         temaPillColor = '#00897B'; 
     } else if (pKeyLowerCase.includes('molida')) { 
@@ -1091,7 +1099,7 @@ function renderResumen() {
     const promProb = 100 - promConf;
     const maxProb = Math.max(...lineaStats.map(x => x.prob), 1);
 
-    const top3 = eqs.map(e => {
+    const topEquiposArray = eqs.map(e => {
       const lnOp  = lineas[e.linea]?.op || 0;
       const mtbf  = e.det > 0 ? lnOp / e.det : 0;
       const mttr  = e.det > 0 ? e.hrs / e.det : 0;
@@ -1111,13 +1119,11 @@ function renderResumen() {
     }).filter(e => {
         if (e.det <= 0) return false;
         let eqStr = String(e.equipo).trim().toLowerCase();
-        let esCarnes = pKeyLowerCase.includes('carne') || pKeyLowerCase.includes('mercadeo') || pKeyLowerCase.includes('molida');
-        let esMasas = !esCarnes;
-
-        if (esMasas && eqStr === '0') return false;
-        if (esCarnes && (eqStr === '' || eqStr === 'nan' || eqStr === 'null' || eqStr === 'n/a')) return false;
+        
+        if (esMasasTema && eqStr === '0') return false;
+        if (esCarnesTema && (eqStr === '' || eqStr === 'nan' || eqStr === 'null' || eqStr === 'n/a')) return false;
         return true;
-    }).sort((a,b)=>b.prob-a.prob).slice(0,3);
+    }).sort((a,b)=>b.prob-a.prob).slice(0, limiteTop);
 
     const barras = lineaStats.map((s,i) => {
       const pct = (s.prob / Math.max(maxProb, 1) * 100).toFixed(1);
@@ -1154,8 +1160,8 @@ function renderResumen() {
         </div>`;
     }).join('');
 
-    const rankColors = ['#CC2222','#E65100','#F9A825'];
-    const filas = top3.map((e, i) => {
+    const rankColors = ['#CC2222','#E65100','#F9A825','#F1C40F','#3498DB','#9B59B6'];
+    const filas = topEquiposArray.map((e, i) => {
       const probColor = e.prob > 60 ? '#C0392B' : e.prob > 35 ? '#E67E22' : '#27AE60';
       const rankTop = i + 1;
       
@@ -1223,7 +1229,7 @@ function renderResumen() {
         <div class="top-section">
           <div class="plant-header">
             <span class="plant-badge" style="background:${temaPillColor}">${planta.toUpperCase()}</span>
-            <h3>Top 3 Equipos Críticos</h3>
+            <h3>Top ${limiteTop} Equipos Críticos</h3>
           </div>
           <div class="grid-table">
             <div class="grid-th">
@@ -1235,7 +1241,7 @@ function renderResumen() {
               <div class="center" style="opacity:0.6;">MTBF (Ant.)<small>Sem ${sDesde} a ${sHastaPrev}</small></div>
               <div>ACCIONES CORRECTIVAS</div>
             </div>
-            ${top3.length ? filas : '<p style="color:var(--text-muted);font-size:0.9rem;padding:15px 0;">Sin detenciones críticas en el período.</p>'}
+            ${topEquiposArray.length ? filas : '<p style="color:var(--text-muted);font-size:0.9rem;padding:15px 0;">Sin detenciones críticas en el período.</p>'}
           </div>
         </div>
 
