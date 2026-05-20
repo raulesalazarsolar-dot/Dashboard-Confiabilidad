@@ -3,7 +3,6 @@ import json
 import math
 import shutil
 import re
-import base64
 import pandas as pd
 import gdown
 from datetime import datetime
@@ -71,12 +70,20 @@ def buscar_columna_semana(df):
                 return c
     return None
 
+def buscar_columna_mes(df):
+    for c in df.columns:
+        if str(c).strip().lower() == 'mes':
+            return c
+    # Si no la encuentra como 'mes', busca en la columna C (índice 2)
+    if len(df.columns) > 2 and 'mes' in str(df.columns[2]).lower():
+        return df.columns[2]
+    return None
+
 def buscar_tiempo_detencion_hr(df, super_planta):
     for c in df.columns:
         cl = str(c).lower()
         if super_planta == 'Carnes' and 'tpo detenciones' in cl and 'hr' in cl:
             return c
-
     for c in df.columns:
         if 'detencion' in str(c).lower() and 'hr' in str(c).lower():
             return c
@@ -105,7 +112,6 @@ def buscar_columna_tiempo_plan(df, super_planta):
             return c
         if super_planta == 'Masas' and 'tpo disponible' in cl and 'hr' in cl:
             return c
-
     cols_lower = [str(c).lower().replace(' ', ' ').strip() for c in df.columns]
     for i, c in enumerate(cols_lower):
         if (' plan' in c or 'disponible' in c) and 'hr' in c:
@@ -164,6 +170,9 @@ def procesar_datos_confiabilidad():
         except Exception as e:
             print(f"  ❌ Error leyendo archivo de acciones: {e}")
 
+    meses_dict = {1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun', 
+                  7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'}
+
     for archivo_nombre in archivos:
         if 'acciones' in archivo_nombre.lower(): continue
 
@@ -194,6 +203,7 @@ def procesar_datos_confiabilidad():
             col_semana_det  = buscar_columna_semana(df_det)
             col_linea_det   = buscar_columna_linea(df_det)
             col_tpo_det     = buscar_tiempo_detencion_hr(df_det, super_planta)
+            col_mes         = buscar_columna_mes(df_det)
 
             if not all([col_equipo, col_semana_det, col_linea_det, col_tpo_det]):
                 print(f"  ❌ Faltan columnas vitales en FEM para {planta_nombre}. Saltando...")
@@ -204,8 +214,13 @@ def procesar_datos_confiabilidad():
             df_det['Linea_Clean']   = df_det[col_linea_det].apply(lambda x: mapear_linea(x, planta_nombre))
             df_det['Equipo_Clean']  = df_det[col_equipo].astype(str).str.strip().str.title()
             df_det['Semana_Clean']  = limpiar_semana(df_det[col_semana_det])
-            df_det = df_det[df_det['Semana_Clean'] > 0]
+            
+            if col_mes:
+                df_det['Mes_Clean'] = pd.to_numeric(df_det[col_mes], errors='coerce').map(meses_dict).fillna('N/A')
+            else:
+                df_det['Mes_Clean'] = 'N/A'
 
+            df_det = df_det[df_det['Semana_Clean'] > 0]
             df_det = filtrar_semanas(df_det)
 
             agrup_det_linea = df_det.groupby(['Linea_Clean', 'Semana_Clean']).agg(
@@ -308,6 +323,7 @@ def procesar_datos_confiabilidad():
                     "linea":         row['Linea_Clean'],
                     "equipo":        row['Equipo_Clean'],
                     "semana":        int(row['Semana_Clean']),
+                    "mes":           str(row['Mes_Clean']) if 'Mes_Clean' in df_det.columns else 'N/A',
                     "detenciones":   1,
                     "tpo_perdido_eq": float(row['Hrs_Perdidas']),
                     "fecha":         str(row['Fecha'])[:10] if 'Fecha' in df_det.columns else 'N/A',
@@ -443,12 +459,15 @@ body.theme-carnes .tab-btn.active { color: #A93226; border-bottom-color: #A93226
 .plant-badge { color:#fff; padding:5px 12px; border-radius:4px; font-size:12px; font-weight:800; letter-spacing:1px; text-transform:uppercase; }
 .plant-header h3 { margin:0; font-size:16px; color:var(--primary); font-weight:800; }
 .grid-table { width: 100%; }
-.grid-th { display:grid; grid-template-columns: 25px 2fr 90px 90px 85px 85px 3fr; gap:10px; padding-bottom:8px; border-bottom:2px solid var(--accent); margin-bottom:5px; }
+
+/* GRID ACTUALIZADA CON COLUMNA PARA EL GRAFICO MES */
+.grid-th { display:grid; grid-template-columns: 25px 1.5fr 130px 85px 85px 80px 80px 2fr; gap:10px; padding-bottom:8px; border-bottom:2px solid var(--accent); margin-bottom:5px; }
 .grid-th > div { font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:.7px; color:var(--text-muted); align-self: end; line-height: 1.2;}
 .grid-th .center { text-align: center; }
 .grid-th small { font-size: 7.5px; font-weight: 600; opacity: 0.8; display: block; margin-top: 2px;}
-.grid-tr { display:grid; grid-template-columns: 25px 2fr 90px 90px 85px 85px 3fr; gap:10px; align-items:center; padding:10px 0; border-bottom:1px solid var(--border); }
+.grid-tr { display:grid; grid-template-columns: 25px 1.5fr 130px 85px 85px 80px 80px 2fr; gap:10px; align-items:center; padding:10px 0; border-bottom:1px solid var(--border); }
 .grid-tr:last-child { border-bottom:none; }
+
 .rank-circle { width:22px; height:22px; border-radius:50%; color:#fff; font-size:10px; font-weight:800; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
 .eq-name { font-size:12px; font-weight:700; color:var(--primary); line-height:1.2;}
 .line-badge { padding:2px 6px; border-radius:4px; font-size:8px; font-weight:800; background:var(--danger); color:#fff; margin-left:6px; vertical-align:middle; }
@@ -633,6 +652,7 @@ let chartInstances = {};
 
 window.rotatorIntervals = [];
 window.rotatorData = {};
+window.sparklineTasks = [];
 
 function toggleTheme() {
   isCarnesTheme = document.getElementById('theme_toggle').checked;
@@ -741,7 +761,7 @@ function applyFilters() {
     if (!eqMap[eqKey]) eqMap[eqKey] = { p: d.planta, l: d.linea, e: d.equipo, det: 0, tpop: 0, eventos: [] };
     eqMap[eqKey].det  += d.detenciones;
     eqMap[eqKey].tpop += d.tpo_perdido_eq;
-    eqMap[eqKey].eventos.push({ fecha: d.fecha, componente: d.componente, tipo: d.tipo, hrs: d.tpo_perdido_eq });
+    eqMap[eqKey].eventos.push({ fecha: d.fecha, componente: d.componente, tipo: d.tipo, hrs: d.tpo_perdido_eq, mes: d.mes });
   });
 
   let lostByLine = {};
@@ -948,12 +968,65 @@ function switchTab(tab) {
   });
 }
 
+function drawSparkline(canvasId, dataPoints, labels) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    
+    if (!dataPoints || dataPoints.length === 0) return;
+    const maxVal = Math.max(...dataPoints, 1);
+    const padX = 12;
+    const padY = 12;
+    const stepX = dataPoints.length > 1 ? (w - padX * 2) / (dataPoints.length - 1) : 0;
+    
+    // Dibujar línea de conexión
+    ctx.beginPath();
+    ctx.strokeStyle = '#BDC3C7';
+    ctx.lineWidth = 1.5;
+    dataPoints.forEach((val, i) => {
+        const x = dataPoints.length > 1 ? padX + i * stepX : w / 2;
+        const y = h - padY - (val / maxVal) * (h - padY * 2);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    });
+    if(dataPoints.length > 1) ctx.stroke();
+    
+    // Dibujar puntos y etiquetas
+    dataPoints.forEach((val, i) => {
+        const x = dataPoints.length > 1 ? padX + i * stepX : w / 2;
+        const y = h - padY - (val / maxVal) * (h - padY * 2);
+        
+        ctx.beginPath();
+        ctx.arc(x, y, 3.5, 0, 2 * Math.PI);
+        ctx.fillStyle = val > 0 ? '#E74C3C' : '#3498DB';
+        ctx.fill();
+        
+        // Etiqueta de valor encima del punto
+        if (val > 0) {
+            ctx.font = 'bold 8px "DM Sans"';
+            ctx.fillStyle = '#C0392B';
+            ctx.textAlign = 'center';
+            ctx.fillText(val.toFixed(1), x, y - 6);
+        }
+        
+        // Etiqueta del mes debajo
+        ctx.font = '8px "DM Sans"';
+        ctx.fillStyle = '#7F8C8D';
+        ctx.textAlign = 'center';
+        ctx.fillText(labels[i], x, h - 2);
+    });
+}
+
 function renderResumen() {
   if (window.rotatorIntervals) {
       window.rotatorIntervals.forEach(clearInterval);
   }
   window.rotatorIntervals = [];
   window.rotatorData = {};
+  window.sparklineTasks = [];
 
   const el = document.getElementById('resumen_content');
   if (!currentLnData.length) { el.innerHTML = '<p style="padding:30px;color:var(--text-muted);">Sin datos para el rango seleccionado.</p>'; return; }
@@ -1010,6 +1083,13 @@ function renderResumen() {
     eqByPlantaPrev[d.planta][k].hrs += d.tpo_perdido_eq;
   });
 
+  // Identificar los meses que tienen actividad en este rango de datos
+  const monthOrder = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  let activeMonths = new Set();
+  currentEqData.forEach(d => { if (d.mes && d.mes !== 'N/A') activeMonths.add(d.mes); });
+  let displayMonths = monthOrder.filter(m => activeMonths.has(m));
+  if (displayMonths.length === 0) displayMonths = ['Ene']; // fallback
+
   let html = '';
   Object.keys(lnByPlanta).sort().forEach(planta => {
     const pKeyLowerCase = planta.toLowerCase();
@@ -1017,7 +1097,6 @@ function renderResumen() {
     let tema = 'tema-masas';
     let temaPillColor = '#0071CE';
     
-    // Lógica para detectar si pertenece al tema Carnes
     const esCarnesTema = pKeyLowerCase.includes('carne') || pKeyLowerCase.includes('mercadeo') || pKeyLowerCase.includes('molida');
     const esMasasTema = !esCarnesTema;
     const limiteTop = esCarnesTema ? 6 : 3;
@@ -1099,11 +1178,18 @@ function renderResumen() {
       const mtbfPrev = detPrev > 0 ? opPrev / detPrev : 0;
       const probPrev = mtbfPrev > 0 ? (1 - Math.exp(-120/mtbfPrev))*100 : (detPrev>0?100:0);
 
-      return { ...e, prob, mtbf, mttr, probPrev, mtbfPrev };
+      // Reconstruir la sumatoria del equipo para el sparkline (horas perdidas por mes)
+      const evs = currentEqData.filter(d => d.planta === planta && d.linea === e.linea && d.equipo === e.equipo);
+      let tpoMes = {};
+      evs.forEach(ev => {
+          if (!tpoMes[ev.mes]) tpoMes[ev.mes] = 0;
+          tpoMes[ev.mes] += ev.tpo_perdido_eq;
+      });
+
+      return { ...e, prob, mtbf, mttr, probPrev, mtbfPrev, tpoMes };
     }).filter(e => {
         if (e.det <= 0) return false;
         let eqStr = String(e.equipo).trim().toLowerCase();
-        
         if (esMasasTema && eqStr === '0') return false;
         if (esCarnesTema && (eqStr === '' || eqStr === 'nan' || eqStr === 'null' || eqStr === 'n/a')) return false;
         return true;
@@ -1179,6 +1265,11 @@ function renderResumen() {
           mtbfArrow = `<span class="stat-trend trend-neu">N/A Ant.</span>`;
       }
 
+      // Prepara datos del gráfico de puntos (Sparkline)
+      let dataPoints = displayMonths.map(m => e.tpoMes[m] || 0);
+      let canvasId = `spark_${pId}_${i}`;
+      window.sparklineTasks.push({ id: canvasId, data: dataPoints, labels: displayMonths });
+
       return `
         <div class="grid-tr">
           <div class="rank-circle" style="background:${rankColors[i]}">${rankTop}</div>
@@ -1186,6 +1277,10 @@ function renderResumen() {
             ${e.equipo}<span class="line-badge">${e.linea}</span>
           </div>
           
+          <div class="stat-box" style="background:#fff; border: 1px dashed var(--border);">
+             <canvas id="${canvasId}" width="120" height="40" style="display:block; margin:auto;"></canvas>
+          </div>
+
           <div class="stat-box bg-red-light">
             <span class="stat-val" style="color:${probColor}">${e.prob.toFixed(1)}%</span>
             ${probArrow}
@@ -1219,6 +1314,7 @@ function renderResumen() {
             <div class="grid-th">
               <div>#</div>
               <div>EQUIPO</div>
+              <div class="center">TPO PERDIDO / MES<small>Evolución</small></div>
               <div class="center">PB. FALLA<small>Sem ${sDesde} a ${sHasta}</small></div>
               <div class="center" style="opacity:0.6;">PB. FALLA (Ant.)<small>Sem ${sDesde} a ${sHastaPrev}</small></div>
               <div class="center">MTBF<small>Sem ${sDesde} a ${sHasta}</small></div>
@@ -1255,6 +1351,9 @@ function renderResumen() {
   });
 
   el.innerHTML = html;
+
+  // Renderizar gráficos de puntos sparkline
+  window.sparklineTasks.forEach(task => drawSparkline(task.id, task.data, task.labels));
 
   Object.keys(window.rotatorData).forEach(pid => {
       const container = document.getElementById('rotator_' + pid);
