@@ -97,7 +97,7 @@ body.theme-carnes .tab-btn.active { color: #A93226; border-bottom-color: #A93226
 .tab-panel { display: none; flex: 1; overflow: hidden; }
 .tab-panel.active { display: flex; }
 
-/* ── NUEVO DISEÑO RESUMEN V3 (VERDE ABAJO, TOP 3, ACUMULADOS) ── */
+/* ── NUEVO DISEÑO RESUMEN V3 ── */
 .resumen-panel { display:flex; flex-direction:column; padding: 20px 30px; overflow-y: auto; background: #F4F6FA; width:100%; gap: 25px;}
 .fila-planta-v3 { display:flex; flex-direction:column; background: #fff; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); overflow:hidden;}
 .top-section { padding: 20px 25px; }
@@ -117,8 +117,8 @@ body.theme-carnes .tab-btn.active { color: #A93226; border-bottom-color: #A93226
 .stat-box { text-align:center; border-radius:4px; padding:6px 4px; display:flex; flex-direction:column; justify-content:center; align-items:center; }
 .stat-val { font-size:14px; font-weight:800; line-height:1; }
 .stat-trend { font-size:9px; font-weight:800; margin-top: 3px; display:flex; align-items:center; gap:2px; }
-.trend-up { color: #C0392B; } /* Empeoró Falla */
-.trend-dn { color: #27AE60; } /* Mejoró Falla */
+.trend-up { color: #C0392B; } 
+.trend-dn { color: #27AE60; } 
 .trend-neu { color: #95A5A6; }
 .bg-red-light { background: #FEF0F0; }
 .bg-blue-light { background: #EEF4FF; }
@@ -130,9 +130,11 @@ body.theme-carnes .tab-btn.active { color: #A93226; border-bottom-color: #A93226
 .bottom-section.tema-carnes { background: #4A0E0E; }
 .bottom-section.tema-dely { background: #2C4A3E; }
 .bottom-section.tema-molida { background: #4A2511; }
-.bottom-title { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:1px; color:rgba(255,255,255,0.7); margin-bottom:15px; display:flex; justify-content:space-between; align-items:center; flex-wrap: wrap; gap:10px;}
-.kpis-planta { display:flex; gap:12px; font-size:9px; align-items:center; background: rgba(0,0,0,0.15); padding: 4px 10px; border-radius: 6px; flex-wrap: wrap;}
-.kpis-planta span strong { font-size: 11px; color:#fff; margin-left: 3px; }
+
+/* NUEVOS ESTILOS PARA LOS TÍTULOS Y KPIs APILADOS */
+.section-label { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:1px; color:rgba(255,255,255,0.7); margin-bottom:8px; display:block; }
+.kpis-planta { display:flex; gap:15px; font-size:10px; align-items:center; background: rgba(0,0,0,0.2); padding: 8px 12px; border-radius: 6px; flex-wrap: wrap; margin-bottom: 20px; }
+.kpis-planta span strong { font-size: 12px; color:#fff; margin-left: 4px; }
 .lines-grid { display: flex; flex-wrap: wrap; gap: 20px; }
 .line-item { flex: 1; min-width: 220px; }
 </style>
@@ -175,7 +177,7 @@ body.theme-carnes .tab-btn.active { color: #A93226; border-bottom-color: #A93226
     <div style="padding:20px;border-top:1px solid var(--border);">
       <button class="btn-export" onclick="descargarExcel()">⬇️ Exportar Data a Excel</button>
       <div style="text-align:center;font-size:0.7rem;color:var(--text-muted);margin-top:15px;font-weight:600;">
-        Actualizado: 19/05/2026 22:59
+        Actualizado: 19/05/2026 23:45
       </div>
     </div>
   </div>
@@ -806,16 +808,16 @@ function renderResumen() {
         </div>
 
         <div class="bottom-section ${tema}">
-          <div class="bottom-title">
-            <span>Estado por Línea de Producción</span>
-            <div class="kpis-planta">
-                <span>MTBF: <strong>${promMTBF.toFixed(1)}h</strong></span>
-                <span>MTTR: <strong>${promMTTR.toFixed(2)}h</strong></span>
-                <span>Conf: <strong>${promConf.toFixed(1)}%</strong></span>
-                <span>Mant: <strong>${promMant.toFixed(1)}%</strong></span>
-                <span>Pb. Falla: <strong>${promProb.toFixed(1)}%</strong></span>
-            </div>
+          <span class="section-label">INDICADORES ZONA:</span>
+          <div class="kpis-planta">
+              <span>MTBF: <strong>${promMTBF.toFixed(1)}h</strong></span>
+              <span>MTTR: <strong>${promMTTR.toFixed(2)}h</strong></span>
+              <span>Conf: <strong>${promConf.toFixed(1)}%</strong></span>
+              <span>Mant: <strong>${promMant.toFixed(1)}%</strong></span>
+              <span>Pb. Falla: <strong>${promProb.toFixed(1)}%</strong></span>
           </div>
+
+          <span class="section-label">ESTADO POR LÍNEA DE PRODUCCIÓN</span>
           <div class="lines-grid">
             ${barras}
           </div>
