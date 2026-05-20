@@ -161,7 +161,7 @@ body.theme-carnes .tab-btn.active { color: #A93226; border-bottom-color: #A93226
 <body>
 <div class="top-bar">
   <div class="brand">
-    <img src="https://upload.wikimedia.org/wikipedia/commons/b/b1/Walmart_logo_%282008%29.svg" alt="Walmart" style="height:30px;filter:brightness(0) invert(1);">
+    <img src="https://upload.wikimedia.org/wikipedia/commons/c/ca/Walmart_logo.svg" alt="Walmart" style="height:30px;filter:brightness(0) invert(1);">
     <h2>Dashboard Confiabilidad <span>Libro Confiabilidad Walmart 2026</span></h2>
   </div>
   <div class="planta-switch">
@@ -195,6 +195,7 @@ body.theme-carnes .tab-btn.active { color: #A93226; border-bottom-color: #A93226
     </div>
     <div style="padding:20px; border-top:1px solid var(--border); display:flex; flex-direction:column; align-items:center; width:100%;">
       
+      <!-- ESPACIO PARA TEAM BRANDING INTERNO (ARRIBA DEL BOTÓN EXCEL) -->
       <div class="team-branding" id="branding_div">
           <img src="data:image/png;base64," alt="Ways 2026" id="avatar_img">
           <p>Equipo de Planificación<br>Ways 2026</p>
@@ -202,7 +203,7 @@ body.theme-carnes .tab-btn.active { color: #A93226; border-bottom-color: #A93226
 
       <button class="btn-export" onclick="descargarExcel()">⬇️ Exportar Data a Excel</button>
       <div style="text-align:center;font-size:0.7rem;color:var(--text-muted);margin-top:15px;font-weight:600;">
-        Actualizado: 20/05/2026 10:21
+        Actualizado: 20/05/2026 10:40
       </div>
       
     </div>
@@ -691,16 +692,15 @@ function renderResumen() {
     
     let tema = 'tema-masas';
     let temaPillColor = '#0071CE';
+    let isCarnesArea = False;
     
-    if (pKeyLowerCase.includes('carne') || pKeyLowerCase.includes('mercadeo')) { 
+    if (pKeyLowerCase.includes('carne') || pKeyLowerCase.includes('mercadeo') || pKeyLowerCase.includes('molida')) { 
         tema = 'tema-carnes'; 
         temaPillColor = '#C0392B'; 
+        isCarnesArea = True;
     } else if (pKeyLowerCase.includes('dely')) { 
         tema = 'tema-dely'; 
         temaPillColor = '#00897B'; 
-    } else if (pKeyLowerCase.includes('molida')) { 
-        tema = 'tema-molida'; 
-        temaPillColor = '#D35400'; 
     }
 
     const lineas = lnByPlanta[planta];
@@ -752,7 +752,10 @@ function renderResumen() {
     const promProb = 100 - promConf;
     const maxProb = Math.max(...lineaStats.map(x => x.prob), 1);
 
-    const top3 = eqs.map(e => {
+    const numero_top = isCarnesArea ? 6 : 3;
+    const titulo_top = `Top ${numero_top} Equipos Críticos`;
+
+    const top_equipos = eqs.map(e => {
       const lnOp  = lineas[e.linea]?.op || 0;
       const mtbf  = e.det > 0 ? lnOp / e.det : 0;
       const mttr  = e.det > 0 ? e.hrs / e.det : 0;
@@ -778,7 +781,7 @@ function renderResumen() {
         if (esMasas && eqStr === '0') return false;
         if (esCarnes && (eqStr === '' || eqStr === 'nan' || eqStr === 'null' || eqStr === 'n/a')) return false;
         return true;
-    }).sort((a,b)=>b.prob-a.prob).slice(0,3);
+    }).sort((a,b)=>b.prob-a.prob).slice(0, numero_top);
 
     const barras = lineaStats.map((s,i) => {
       const pct = (s.prob / Math.max(maxProb, 1) * 100).toFixed(1);
@@ -815,8 +818,8 @@ function renderResumen() {
         </div>`;
     }).join('');
 
-    const rankColors = ['#CC2222','#E65100','#F9A825'];
-    const filas = top3.map((e, i) => {
+    const rankColors = ['#CC2222','#E65100','#F9A825', '#C0392B', '#D35400', '#E67E22'];
+    const filas = top_equipos.map((e, i) => {
       const probColor = e.prob > 60 ? '#C0392B' : e.prob > 35 ? '#E67E22' : '#27AE60';
       const rankTop = i + 1;
       
@@ -833,8 +836,8 @@ function renderResumen() {
       let probDif = e.prob - e.probPrev;
       let probArrow = "";
       if (e.probPrev > 0 || e.mtbfPrev > 0) {
-          if (probDif > 0.1) probArrow = `<span class="stat-trend trend-up">🔺 +${probDif.toFixed(1)}pp</span>`;
-          else if (probDif < -0.1) probArrow = `<span class="stat-trend trend-dn">🔻 ${probDif.toFixed(1)}pp</span>`;
+          if (probDif > 0.1) probArrow = `<span class="stat-trend trend-up">🔺 +\${probDif.toFixed(1)}pp</span>`;
+          else if (probDif < -0.1) probArrow = `<span class="stat-trend trend-dn">🔻 \${probDif.toFixed(1)}pp</span>`;
           else probArrow = `<span class="stat-trend trend-neu">▬ 0.0pp</span>`;
       } else {
           probArrow = `<span class="stat-trend trend-neu">N/A Ant.</span>`;
@@ -843,8 +846,8 @@ function renderResumen() {
       let mtbfDif = e.mtbf - e.mtbfPrev;
       let mtbfArrow = "";
       if (e.probPrev > 0 || e.mtbfPrev > 0) {
-          if (mtbfDif > 0.1) mtbfArrow = `<span class="stat-trend trend-dn">🔺 +${mtbfDif.toFixed(1)}h</span>`;
-          else if (mtbfDif < -0.1) mtbfArrow = `<span class="stat-trend trend-up">🔻 ${mtbfDif.toFixed(1)}h</span>`;
+          if (mtbfDif > 0.1) mtbfArrow = `<span class="stat-trend trend-dn">🔺 +\${mtbfDif.toFixed(1)}h</span>`;
+          else if (mtbfDif < -0.1) mtbfArrow = `<span class="stat-trend trend-up">🔻 \${mtbfDif.toFixed(1)}h</span>`;
           else mtbfArrow = `<span class="stat-trend trend-neu">▬ 0.0h</span>`;
       } else {
           mtbfArrow = `<span class="stat-trend trend-neu">N/A Ant.</span>`;
@@ -852,29 +855,29 @@ function renderResumen() {
 
       return `
         <div class="grid-tr">
-          <div class="rank-circle" style="background:${rankColors[i]}">${rankTop}</div>
+          <div class="rank-circle" style="background:\${rankColors[i]}">\${rankTop}</div>
           <div class="eq-name">
-            ${e.equipo}<span class="line-badge">${e.linea}</span>
+            \${e.equipo}<span class="line-badge">\${e.linea}</span>
           </div>
           
           <div class="stat-box bg-red-light">
-            <span class="stat-val" style="color:${probColor}">${e.prob.toFixed(1)}%</span>
-            ${probArrow}
+            <span class="stat-val" style="color:\${probColor}">\${e.prob.toFixed(1)}%</span>
+            \${probArrow}
           </div>
           <div class="stat-box bg-gray-light">
-            <span class="stat-val" style="color:#7F8C8D">${e.probPrev.toFixed(1)}%</span>
+            <span class="stat-val" style="color:#7F8C8D">	ext{\${e.probPrev.toFixed(1)}}%</span>
           </div>
 
           <div class="stat-box bg-blue-light">
-            <span class="stat-val" style="color:#1A5276">${e.mtbf.toFixed(1)}h</span>
-            ${mtbfArrow}
+            <span class="stat-val" style="color:#1A5276">\${e.mtbf.toFixed(1)}h</span>
+            \${mtbfArrow}
           </div>
           <div class="stat-box bg-gray-light">
-            <span class="stat-val" style="color:#7F8C8D">${e.mtbfPrev.toFixed(1)}h</span>
+            <span class="stat-val" style="color:#7F8C8D">\${e.mtbfPrev.toFixed(1)}h</span>
           </div>
 
           <div style="padding-left:10px; border-left:2px solid #EAF0F8;">
-            <div style="font-size:10px; color:#2C3E50; line-height:1.4;">${accionStr}</div>
+            <div style="font-size:10px; color:#2C3E50; line-height:1.4;">\${accionStr}</div>
           </div>
         </div>`;
     }).join('');
@@ -883,43 +886,43 @@ function renderResumen() {
       <div class="fila-planta-v3">
         <div class="top-section">
           <div class="plant-header">
-            <span class="plant-badge" style="background:${temaPillColor}">${planta.toUpperCase()}</span>
-            <h3>Top 3 Equipos Críticos</h3>
+            <span class="plant-badge" style="background:\${temaPillColor}">\${planta.toUpperCase()}</span>
+            <h3>\${titulo_top}</h3>
           </div>
           <div class="grid-table">
             <div class="grid-th">
               <div>#</div>
               <div>EQUIPO</div>
-              <div class="center">PB. FALLA<small>Sem ${sDesde} a ${sHasta}</small></div>
-              <div class="center" style="opacity:0.6;">PB. FALLA (Ant.)<small>Sem ${sDesde} a ${sHastaPrev}</small></div>
-              <div class="center">MTBF<small>Sem ${sDesde} a ${sHasta}</small></div>
-              <div class="center" style="opacity:0.6;">MTBF (Ant.)<small>Sem ${sDesde} a ${sHastaPrev}</small></div>
+              <div class="center">PB. FALLA<small>Sem \${sDesde} a \${sHasta}</small></div>
+              <div class="center" style="opacity:0.6;">PB. FALLA (Ant.)<small>Sem \${sDesde} a \${sHastaPrev}</small></div>
+              <div class="center">MTBF<small>Sem \${sDesde} a \${sHasta}</small></div>
+              <div class="center" style="opacity:0.6;">MTBF (Ant.)<small>Sem \${sDesde} a \${sHastaPrev}</small></div>
               <div>ACCIONES CORRECTIVAS</div>
             </div>
-            ${top3.length ? filas : '<p style="color:var(--text-muted);font-size:0.9rem;padding:15px 0;">Sin detenciones críticas en el período.</p>'}
+            \${top_equipos.length ? filas : '<p style="color:var(--text-muted);font-size:0.9rem;padding:15px 0;">Sin detenciones críticas en el período.</p>'}
           </div>
         </div>
 
-        <div class="bottom-section ${tema}">
+        <div class="bottom-section \${tema}">
           <div class="indicators-header">
               <div class="zona-block">
                   <span class="section-label">Indicadores zona 2026</span>
                   <div class="kpis-planta">
-                      <span>MTBF: <strong>${promMTBF.toFixed(1)}h</strong></span>
-                      <span>MTTR: <strong>${promMTTR.toFixed(2)}h</strong></span>
-                      <span>Conf: <strong>${promConf.toFixed(1)}%</strong></span>
-                      <span>Mant: <strong>${promMant.toFixed(1)}%</strong></span>
-                      <span>Pb. Falla: <strong>${promProb.toFixed(1)}%</strong></span>
+                      <span>MTBF: <strong>\${promMTBF.toFixed(1)}h</strong></span>
+                      <span>MTTR: <strong>\${promMTTR.toFixed(2)}h</strong></span>
+                      <span>Conf: <strong>\${promConf.toFixed(1)}%</strong></span>
+                      <span>Mant: <strong>\${promMant.toFixed(1)}%</strong></span>
+                      <span>Pb. Falla: <strong>\${promProb.toFixed(1)}%</strong></span>
                   </div>
               </div>
               <div class="line-rotator-block">
                   <span class="section-label">Indicadores por Línea (Rotativo)</span>
-                  <div class="kpis-rotator" id="rotator_${pId}"></div>
+                  <div class="kpis-rotator" id="rotator_\${pId}"></div>
               </div>
           </div>
           <span class="section-label">ESTADO POR LÍNEA DE PRODUCCIÓN</span>
           <div class="lines-grid">
-            ${barras}
+            \${barras}
           </div>
         </div>
       </div>`;
