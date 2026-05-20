@@ -15,7 +15,6 @@ from zoneinfo import ZoneInfo
 DRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/1xXeea_F6HTsI-Wfj7HP2KdCnzGtPIUQq?usp=sharing"
 DATA_DIR = "./data"
 OUTPUT_HTML = "index.html"
-AVATAR_IMG = os.path.join(DATA_DIR, "avatar.png") # Ahora busca la imagen que se descarga de Drive automáticamente
 
 # ==========================================
 # 2. BUSCADORES UNIVERSALES E INTELIGENTES Y MAPEO
@@ -24,22 +23,25 @@ def mapear_linea(linea_str, planta_str):
     l = str(linea_str).strip().lower()
     p = str(planta_str).strip().lower()
     
+    # Mapeos directos según la imagen de referencia para asegurar que se apliquen siempre
+    if "flow pack 3" in l or "fp3" in l: return "FP3"
+    if "flow pack" in l or "fp" in l and "fp3" not in l: return "FP"
+    if "multivac 2" in l or "m2" in l: return "M2"
+    if "variovac pizza" in l or "vpz" in l: return "VPZ"
+    if "fritsch empanadas" in l or "empanadas" in l: return "Empanada"
+    if "fritsch pizzas" in l or "pizzas" in l: return "Pizza"
+
     if "panader" in p:
-        if "l1" in l or "hallulla" in l and "marraqueta" not in l and "l2" not in l: return "L1"
-        if "l3" in l or "surtido" in l and "l5" not in l: return "L3"
+        if "l1" in l or ("hallulla" in l and "marraqueta" not in l and "l2" not in l): return "L1"
+        if "l3" in l or ("surtido" in l and "l5" not in l): return "L3"
         if "l4" in l or ("hallulla" in l and "marraqueta" in l): return "L4"
         if "l5" in l: return "L5"
         if "l2" in l or "marraquetas" in l: return "L2"
         if "multivac 1" in l or "m1" in l: return "M1"
         if "multivac 3" in l or "m3" in l: return "M3"
-        if "variovac" in l: return "VPN"
+        if "variovac" in l and "pizza" not in l: return "VPN"
     elif "boller" in p:
-        if "empanadas" in l or "fritsch empanadas" in l: return "Empanada"
         if "bolleria" in l: return "Bollería"
-        if "pizzas" in l or "fritsch pizzas" in l: return "Pizza"
-        if "variovac pizza" in l or "vpz" in l: return "VPZ"
-        if "flow pack 3" in l or "fp3" in l: return "FP3"
-        if "flow pack" in l or "fp" in l: return "FP"
         
     return str(linea_str).strip().upper()
 
@@ -328,17 +330,6 @@ def procesar_datos_confiabilidad():
 def generar_html_moderno(db_json):
     fecha_actual = datetime.now(ZoneInfo("America/Santiago")).strftime("%d/%m/%Y %H:%M")
     
-    # Procesar imagen del Avatar si existe
-    avatar_base64 = ""
-    if os.path.exists(AVATAR_IMG):
-        try:
-            with open(AVATAR_IMG, "rb") as image_file:
-                avatar_base64 = base64.b64encode(image_file.read()).decode('utf-8')
-        except Exception as e:
-            print(f"⚠️ Error al leer imagen de avatar: {e}")
-    else:
-        print(f"⚠️ No se encontró la imagen del avatar en {AVATAR_IMG}")
-
     html_template = """<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -392,9 +383,7 @@ select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,113,206
 /* ESTILOS DE TEAM BRANDING FLUIDOS */
 .team-branding { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 18px; width: 100%; background: #F8FAFD; padding: 12px; border-radius: 10px; border: 1px dashed var(--border); }
 body.theme-carnes .team-branding { background: #FFF5F5; }
-.team-branding img { max-width: 110px; height: auto; transition: transform 0.3s; }
-.team-branding img:hover { transform: scale(1.05); }
-.team-branding p { font-size: 0.75rem; font-weight: 800; color: var(--text); text-transform: uppercase; letter-spacing: 0.5px; margin: 0; margin-bottom: 6px; line-height: 1.3; }
+.team-branding p { font-size: 0.75rem; font-weight: 800; color: var(--text); text-transform: uppercase; letter-spacing: 0.5px; margin: 0; line-height: 1.3; }
 
 .content { flex: 1; padding: 30px; overflow-y: auto; display: flex; flex-direction: column; gap: 25px; }
 .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 15px; }
@@ -538,7 +527,6 @@ body.theme-carnes .tab-btn.active { color: #A93226; border-bottom-color: #A93226
       
       <div class="team-branding" id="branding_div">
           <p>Equipo Planificación<br>WAYS 2026</p>
-          <img src="data:image/png;base64,__AVATAR_B64__" alt="Ways 2026" id="avatar_img">
       </div>
 
       <button class="btn-export" onclick="descargarExcel()">⬇️ Exportar Data a Excel</button>
@@ -950,10 +938,6 @@ function descargarExcel() {
 }
 
 window.onload = () => {
-    let avatarImg = document.getElementById('avatar_img');
-    if (avatarImg && avatarImg.src.includes('__AVATAR_B64__')) {
-        document.getElementById('branding_div').style.display = 'none';
-    }
     toggleTheme();
 };
 
@@ -1300,7 +1284,6 @@ function renderResumen() {
 
     full_html = html_template.replace("__DB_JSON_DATA__", json.dumps(db_json))
     full_html = full_html.replace("__FECHA_ACTUAL__", fecha_actual)
-    full_html = full_html.replace("__AVATAR_B64__", avatar_base64)
 
     with open(OUTPUT_HTML, "w", encoding="utf-8") as f:
         f.write(full_html)
